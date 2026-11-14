@@ -215,10 +215,19 @@
   justify-content: center;
   width: 32px;
   height: 32px;
+  border-radius: 6px;
+}
+
+.speakerIcon {
   color: var(--color-harmonic-500);
   border: 1px solid var(--color-harmonic-500);
-  border-radius: 6px;
   background: rgba(245, 158, 11, 0.08);
+}
+
+.micIcon {
+  color: var(--color-sonar-400);
+  border: 1px solid var(--color-sonar-400);
+  background: rgba(34, 211, 238, 0.08);
 }
 
 .nodeName {

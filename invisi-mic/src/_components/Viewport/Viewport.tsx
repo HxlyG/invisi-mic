@@ -136,8 +136,17 @@ export default function Viewport() {
         canvas.style.cursor = "move"
         return
       }
-      canvas.setPointerCapture(e.pointerId)
+
+      const alreadySelected = selected?.kind === dragging.kind && selected.id === dragging.id
       dispatch(selectItem(dragging))
+      if (!alreadySelected) {
+        dragging = null
+        clickStart = null
+        canvas.style.cursor = "default"
+        return
+      }
+
+      canvas.setPointerCapture(e.pointerId)
       setActive(dragging)
       canvas.style.cursor = "grabbing"
       liveHeight = state.heights[itemName(dragging.kind, dragging.id)] ?? 0

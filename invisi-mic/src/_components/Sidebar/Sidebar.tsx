@@ -225,7 +225,9 @@ export default function Sidebar() {
         {selected && node ? (
           <div className={styles.body}>
             <div className={styles.node}>
-              <div className={styles.nodeIcon}>
+              <div
+                className={`${styles.nodeIcon} ${selected.kind === "speaker" ? styles.speakerIcon : styles.micIcon}`}
+              >
                 <svg {...icon} width={18} height={18}>
                   {selected.kind === "speaker" ? (
                     <>

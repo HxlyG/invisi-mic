@@ -91,7 +91,7 @@ export function buildScene(
 
   const highlight = (position: THREE.Vector3) => {
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(0.39, 0.43, 48),
+      new THREE.RingGeometry(0.6, 0.64, 48),
       new THREE.MeshBasicMaterial({
         color: 0x94a3b8,
         transparent: true,
