@@ -2,20 +2,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pyroomacoustics as pra
 
-# Create a 4 by 6 metres shoe box room
-room = pra.ShoeBox([4,6])
+def get_materials():
+    return pra.parameters.materials_absorption_table.keys()
 
-# Add a source somewhere in the room
-room.add_source([2.5, 4.5])
+def add_mics(mic_positions: list[list[float]], room: pra.Room):
+    for mic in mic_positions:
+        room.add_microphone(mic)
 
-# Create a linear array beamformer with 4 microphones
-# with angle 0 degrees and inter mic distance 10 cm
-R = pra.linear_2D_array([2, 1.5], 4, 0, 0.1)
-room.add_microphone_array(pra.Beamformer(R, room.fs))
+def add_sources(talker_positions: list[list[float]], room: pra.Room):
+    for talker in talker_positions:
+        room.add_source(*talker)
 
-# Now compute the delay and sum weights for the beamformer
-room.mic_array.rake_delay_and_sum_weights(room.sources[0][:1])
+def shoebox_simulation(shoebox_dims, mic_positions, talker_positions: list[list[float]]):
+    room = pra.ShoeBox(*shoebox_dims)
 
-# plot the room and resulting beamformer
-room.plot(freq=[1000, 2000, 4000, 8000], img_order=0)
-plt.show()
+    add_sources(talker_positions, room)
+    add_mics(mic_positions, room)
+
+    # plot the room and resulting beamformer
+    room.plot(freq=[1000, 2000, 4000, 8000], img_order=0)
+    plt.show()
