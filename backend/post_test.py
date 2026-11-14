@@ -6,7 +6,7 @@ sim = {
     "is_2_dimensional": True,
     "shoebox": [2, 2],
     "mics": [[0, 1], [1, 0]],
-    "talkers": [[2, 3], [3, 4]]
+    "talkers": [[0.5, 0.5], [1.5, 1.5]]
 }
 
 response = requests.post(url, json=sim)

@@ -1,12 +1,12 @@
-import json
-from pathlib import Path
-from sim.sim import shoebox_simulation, get_materials
+import threading
+
+from sim.sim import get_materials, shoebox_simulation
 
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-SIM_DIR = Path(__file__).parent
+sim_lock = threading.Lock()
 
 @app.get("/")
 def index():
@@ -18,25 +18,24 @@ def materials():
 
 @app.route("/data", methods=["POST"])
 def data():
-    sim = request.get_json()
-
-    sim_path = SIM_DIR / Path(sim).name
-    if not sim_path.is_file():
-        return jsonify({"error": f"unknown sim: {sim}"}), 404
-
-    with sim_path.open() as f:
-        config = json.load(f)
+    config = request.get_json(silent=True)
+    if not isinstance(config, dict):
+        return jsonify({"error": "expected a JSON object body"}), 400
 
     is_2_dimensional = config.get("is_2_dimensional", False)
-    shoebox = config.get("shoebox", [])
-    mics = config.get("mics", [])
-    talkers = config.get("talkers", [])
+    shoebox = config.get("shoebox")
+    mics = config.get("mics")
+    talkers = config.get("talkers")
 
-    shoebox_simulation(shoebox, mics, talkers)
+    if not shoebox or not mics or not talkers:
+        return jsonify({"error": "shoebox, mics, and talkers are required"}), 400
+
+    with sim_lock:
+        shoebox_simulation(shoebox, mics, talkers)
 
     return jsonify(
         {
-            "sim": sim,
+            "sim": config,
             "is_2_dimensional": is_2_dimensional,
             "shoebox": shoebox,
             "mics": mics,
