@@ -3,6 +3,8 @@
 import { useState } from "react"
 import styles from "./Sidebar.module.css"
 
+import { useAppSelector } from "@/store/hooks"
+
 const icon = {
   width: 15,
   height: 15,
@@ -14,16 +16,23 @@ const icon = {
   strokeLinejoin: "round" as const,
 }
 
-const FT3_TO_M3 = 0.0283168
+const M_TO_FT = 3.28084
+
+type Unit = "m" | "ft"
+
+const toDisplay = (meters: number, unit: Unit) => (unit === "ft" ? meters * M_TO_FT : meters)
+const toMeters = (value: number, unit: Unit) => (unit === "ft" ? value / M_TO_FT : value)
+const format = (value: number) => String(Math.round(value * 100) / 100)
 
 interface FieldProps {
   label?: string
   value: string
   unit: string
   onChange: (value: string) => void
+  onBlur?: () => void
 }
 
-function Field({ label, value, unit, onChange }: FieldProps) {
+function Field({ label, value, unit, onChange, onBlur }: FieldProps) {
   return (
     <div>
       {label && <span className={styles.label}>{label}</span>}
@@ -34,10 +43,37 @@ function Field({ label, value, unit, onChange }: FieldProps) {
           step="any"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
         />
         <span className={styles.unit}>{unit}</span>
       </label>
     </div>
+  )
+}
+
+interface LengthFieldProps {
+  label: string
+  meters: number
+  unit: Unit
+  onChange: (meters: number) => void
+}
+
+// Keeps the raw text while editing so partial input like "1." isn't rewritten.
+function LengthField({ label, meters, unit, onChange }: LengthFieldProps) {
+  const [draft, setDraft] = useState<string | null>(null)
+
+  return (
+    <Field
+      label={label}
+      unit={unit}
+      value={draft ?? format(toDisplay(meters, unit))}
+      onChange={(text) => {
+        setDraft(text)
+        const parsed = parseFloat(text)
+        if (!Number.isNaN(parsed)) onChange(toMeters(parsed, unit))
+      }}
+      onBlur={() => setDraft(null)}
+    />
   )
 }
 
@@ -70,14 +106,15 @@ function Metric({ label, value, unit, valueClass, percent }: MetricProps) {
 
 export default function Sidebar() {
   const [roomOpen, setRoomOpen] = useState(true)
-  const [room, setRoom] = useState({ width: "45.93", length: "32.81", height: "14.76" })
+  const [room, setRoom] = useState({ width: 14, length: 10, height: 4.5 })
   const [absorption, setAbsorption] = useState("drywall")
-  const [pos, setPos] = useState({ x: "22.97", y: "4.92", z: "5.25" })
+  const [pos, setPos] = useState({ x: 7, y: 1.5, z: 1.6 })
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
 
-  const volume =
-    Number(room.width) * Number(room.length) * Number(room.height) * FT3_TO_M3
+  const unit = useAppSelector((state) => state.dimension.currentUnit)
+
+  const volume = toDisplay(1, unit) ** 3 * room.width * room.length * room.height
 
   return (
     <aside className={`${styles.sidebar} hud-scroll`}>
@@ -112,23 +149,23 @@ export default function Sidebar() {
         {roomOpen && (
           <div className={styles.body}>
             <div className={`${styles.row} ${styles.cols2}`}>
-              <Field
+              <LengthField
                 label="Width"
-                unit="ft"
-                value={room.width}
+                unit={unit}
+                meters={room.width}
                 onChange={(width) => setRoom({ ...room, width })}
               />
-              <Field
+              <LengthField
                 label="Length"
-                unit="ft"
-                value={room.length}
+                unit={unit}
+                meters={room.length}
                 onChange={(length) => setRoom({ ...room, length })}
               />
             </div>
-            <Field
+            <LengthField
               label="Ceiling height"
-              unit="ft"
-              value={room.height}
+              unit={unit}
+              meters={room.height}
               onChange={(height) => setRoom({ ...room, height })}
             />
             <div>
@@ -151,7 +188,7 @@ export default function Sidebar() {
             </div>
             <div className={styles.meta}>
               <span>Room volume</span>
-              <span>{Math.round(volume)} m³</span>
+              <span>{Math.round(volume)} {unit}³</span>
             </div>
           </div>
         )}
@@ -188,9 +225,9 @@ export default function Sidebar() {
           </div>
 
           <div className={`${styles.row} ${styles.cols3}`}>
-            <Field label="X" unit="ft" value={pos.x} onChange={(x) => setPos({ ...pos, x })} />
-            <Field label="Y" unit="ft" value={pos.y} onChange={(y) => setPos({ ...pos, y })} />
-            <Field label="Z" unit="ft" value={pos.z} onChange={(z) => setPos({ ...pos, z })} />
+            <LengthField label="X" unit={unit} meters={pos.x} onChange={(x) => setPos({ ...pos, x })} />
+            <LengthField label="Y" unit={unit} meters={pos.y} onChange={(y) => setPos({ ...pos, y })} />
+            <LengthField label="Z" unit={unit} meters={pos.z} onChange={(z) => setPos({ ...pos, z })} />
           </div>
 
           <Field label="Voice level" unit="dB SPL" value={voice} onChange={setVoice} />

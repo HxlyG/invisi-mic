@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useAppDispatch, useAppSelector } from "@/store/hooks"
+import { setUnit, setViewMode } from "@/store/slices/dimensionSlice"
 import styles from "./Topbar.module.css"
 
 const icon = {
@@ -15,8 +16,9 @@ const icon = {
 }
 
 export default function Topbar() {
-  const [view, setView] = useState<"2d" | "3d">("2d")
-  const [unit, setUnit] = useState<"m" | "ft">("m")
+  const dispatch = useAppDispatch()
+  const view = useAppSelector((state) => state.dimension.viewMode)
+  const unit = useAppSelector((state) => state.dimension.currentUnit)
 
   return (
     <header className={`${styles.topbar} p-10 `}>
@@ -47,7 +49,7 @@ export default function Topbar() {
 
       <div className={styles.units}>
         <button
-          onClick={() => setView("2d")}
+          onClick={() => dispatch(setViewMode("2d"))}
           className={`${styles.unitBtn} ${view === "2d" ? styles.active : ""} flex flex-row gap-2`}
         >
           <svg {...icon} >
@@ -57,7 +59,7 @@ export default function Topbar() {
           2D Floorplan
         </button>
         <button
-          onClick={() => setView("3d")}
+          onClick={() => dispatch(setViewMode("3d"))}
           className={`${styles.unitBtn} ${view === "3d" ? styles.active : ""} flex flex-row gap-2`}
         >
           <svg {...icon}>
@@ -87,13 +89,13 @@ export default function Topbar() {
 
       <div className={styles.units}>
         <button
-          onClick={() => setUnit("m")}
+          onClick={() => dispatch(setUnit("m"))}
           className={`${styles.unitBtn} ${unit === "m" ? styles.active : ""}`}
         >
           m
         </button>
         <button
-          onClick={() => setUnit("ft")}
+          onClick={() => dispatch(setUnit("ft"))}
           className={`${styles.unitBtn} ${unit === "ft" ? styles.active : ""}`}
         >
           ft
