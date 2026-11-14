@@ -1,0 +1,210 @@
+.topbar {
+  --bg: var(--color-studio-900);
+  --panel: var(--color-studio-800);
+  --border: var(--color-studio-700);
+  --text: var(--color-chalk);
+  --muted: var(--color-slate-400);
+  --accent: var(--color-sonar-400);
+  --green: var(--color-signal-green);
+
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 48px;
+  padding: 0 0 0 16px;
+  gap: 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.topbar button {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.badge {
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.divider {
+  width: 1px;
+  height: 1.5rem;
+  align-self: center; /* Vertically centers the 2rem divider */
+  background: var(--border);
+}
+
+.selectWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select {
+  appearance: none;
+  padding: 6px 24px 6px 12px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.select option {
+  background: var(--panel);
+}
+
+.chevron {
+  position: absolute;
+  right: 4px;
+  pointer-events: none;
+  color: var(--muted);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.segBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.segBtn:hover {
+  color: var(--text);
+}
+
+.active {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.iconBtn:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.units {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.unitBtn {
+  padding: 4px 10px;
+  color: var(--muted);
+  border-radius: 4px;
+}
+
+.unitBtn:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.unitBtn.active {
+  color: var(--text);
+  background: var(--panel);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  background: var(--green);
+  border-radius: 50%;
+}
+
+.latency {
+  color: var(--accent);
+}
+
+.demo {
+  font-size: 10px;
+}
+
+.exportBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--muted);
+}
+
+.exportBtn:hover {
+  color: var(--color-slate-400);
+}
+
+.topbar .runBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  padding: 0 24px;
+  font-weight: 600;
+  color: var(--color-obsidian);
+  background: var(--accent);
+}
+
+.topbar .runBtn:hover {
+  filter: brightness(1.3);
+}
