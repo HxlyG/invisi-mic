@@ -3,7 +3,8 @@
 import { useState } from "react"
 import styles from "./Sidebar.module.css"
 
-import { useAppSelector } from "@/store/hooks"
+import { useAppDispatch, useAppSelector } from "@/store/hooks"
+import { removeItem, setRoom, updateItem } from "@/store/slices/sceneSlice"
 
 const icon = {
   width: 15,
@@ -106,12 +107,18 @@ function Metric({ label, value, unit, valueClass, percent }: MetricProps) {
 
 export default function Sidebar() {
   const [roomOpen, setRoomOpen] = useState(true)
-  const [room, setRoom] = useState({ width: 14, length: 10, height: 4.5 })
   const [absorption, setAbsorption] = useState("drywall")
-  const [pos, setPos] = useState({ x: 7, y: 1.5, z: 1.6 })
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
 
+  const dispatch = useAppDispatch()
+  const room = useAppSelector((state) => state.scene.room)
+  const selected = useAppSelector((state) => state.scene.selected)
+  const node = useAppSelector((state) => {
+    const { selected: ref, speakers, micArrays } = state.scene
+    if (!ref) return undefined
+    return (ref.kind === "speaker" ? speakers : micArrays).find((i) => i.id === ref.id)
+  })
   const unit = useAppSelector((state) => state.dimension.currentUnit)
 
   const volume = toDisplay(1, unit) ** 3 * room.width * room.length * room.height
@@ -153,20 +160,20 @@ export default function Sidebar() {
                 label="Width"
                 unit={unit}
                 meters={room.width}
-                onChange={(width) => setRoom({ ...room, width })}
+                onChange={(width) => dispatch(setRoom({ width }))}
               />
               <LengthField
                 label="Length"
                 unit={unit}
                 meters={room.length}
-                onChange={(length) => setRoom({ ...room, length })}
+                onChange={(length) => dispatch(setRoom({ length }))}
               />
             </div>
             <LengthField
               label="Ceiling height"
               unit={unit}
               meters={room.height}
-              onChange={(height) => setRoom({ ...room, height })}
+              onChange={(height) => dispatch(setRoom({ height }))}
             />
             <div>
               <span className={styles.label}>Wall acoustic absorption</span>
@@ -202,55 +209,86 @@ export default function Sidebar() {
             <circle cx="12" cy="12" r="1" />
           </svg>
           <span className={styles.headerTitle}>Selected node</span>
-          <button type="button" className={styles.iconBtn} aria-label="Delete node">
+          <button
+            type="button"
+            className={styles.iconBtn}
+            aria-label="Delete node"
+            disabled={!selected}
+            onClick={() => selected && dispatch(removeItem(selected))}
+          >
             <svg {...icon}>
               <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6" />
             </svg>
           </button>
         </div>
 
-        <div className={styles.body}>
-          <div className={styles.node}>
-            <div className={styles.nodeIcon}>
-              <svg {...icon} width={18} height={18}>
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
-              </svg>
+        {selected && node ? (
+          <div className={styles.body}>
+            <div className={styles.node}>
+              <div className={styles.nodeIcon}>
+                <svg {...icon} width={18} height={18}>
+                  {selected.kind === "speaker" ? (
+                    <>
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+                    </>
+                  ) : (
+                    <>
+                      <circle cx="12" cy="12" r="2" />
+                      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+                    </>
+                  )}
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className={styles.nodeName}>{node.name}</div>
+                <div className={styles.nodeKind}>{selected.kind === "speaker" ? "Human speaker" : "Mic array"}</div>
+              </div>
+              <span className={styles.tag}>Active</span>
             </div>
-            <div style={{ flex: 1 }}>
-              <div className={styles.nodeName}>Speaker 01</div>
-              <div className={styles.nodeKind}>Human speaker</div>
+
+            <div className={`${styles.row} ${styles.cols3}`}>
+              {("xyz" as const).split("").map((axis) => (
+                <LengthField
+                  key={`${selected.id}-${axis}`}
+                  label={axis.toUpperCase()}
+                  unit={unit}
+                  meters={node.position[axis as "x" | "y" | "z"]}
+                  onChange={(value) => dispatch(updateItem({ ...selected, patch: { [axis]: value } }))}
+                />
+              ))}
             </div>
-            <span className={styles.tag}>Active</span>
-          </div>
 
-          <div className={`${styles.row} ${styles.cols3}`}>
-            <LengthField label="X" unit={unit} meters={pos.x} onChange={(x) => setPos({ ...pos, x })} />
-            <LengthField label="Y" unit={unit} meters={pos.y} onChange={(y) => setPos({ ...pos, y })} />
-            <LengthField label="Z" unit={unit} meters={pos.z} onChange={(z) => setPos({ ...pos, z })} />
-          </div>
+            {selected.kind === "speaker" && (
+              <>
+                <Field label="Voice level" unit="dB SPL" value={voice} onChange={setVoice} />
 
-          <Field label="Voice level" unit="dB SPL" value={voice} onChange={setVoice} />
-
-          <div className={styles.lockRow}>
-            <svg {...icon} className={styles.lockIcon}>
-              <rect x="4" y="11" width="16" height="10" rx="2" />
-              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-            </svg>
-            <span className={styles.lockText}>
-              Active talker
-              <span className={styles.lockHint}>(lock beam)</span>
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={locked}
-              aria-label="Lock beam to active talker"
-              className={`${styles.switch} ${locked ? styles.switchOn : ""}`}
-              onClick={() => setLocked(!locked)}
-            />
+                <div className={styles.lockRow}>
+                  <svg {...icon} className={styles.lockIcon}>
+                    <rect x="4" y="11" width="16" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                  </svg>
+                  <span className={styles.lockText}>
+                    Active talker
+                    <span className={styles.lockHint}>(lock beam)</span>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={locked}
+                    aria-label="Lock beam to active talker"
+                    className={`${styles.switch} ${locked ? styles.switchOn : ""}`}
+                    onClick={() => setLocked(!locked)}
+                  />
+                </div>
+              </>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className={styles.body}>
+            <div className={styles.nodeKind}>No node selected</div>
+          </div>
+        )}
       </section>
 
       <section className={styles.section}>

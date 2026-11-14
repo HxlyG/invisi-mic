@@ -1,10 +1,14 @@
 import { configureStore } from "@reduxjs/toolkit";
 import dimensionReducer from "./slices/dimensionSlice";
+import sceneReducer from "./slices/sceneSlice";
+import toolReducer from "./slices/toolSlice";
 
 export const makeStore = () => {
   return configureStore({
     reducer: {
       dimension: dimensionReducer,
+      scene: sceneReducer,
+      tool: toolReducer,
     },
   });
 };

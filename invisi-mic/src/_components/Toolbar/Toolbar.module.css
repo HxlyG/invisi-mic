@@ -1,0 +1,53 @@
+.toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--color-studio-850);
+  border: 1px solid var(--color-studio-700);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.divider {
+  width: 24px;
+  height: 1px;
+  background: var(--color-studio-700);
+}
+
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--color-slate-400);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.button:hover {
+  color: var(--color-chalk);
+  background: var(--color-studio-800);
+}
+
+.active,
+.active:hover {
+  color: var(--color-sonar-400);
+  background: rgba(34, 211, 238, 0.12);
+}
