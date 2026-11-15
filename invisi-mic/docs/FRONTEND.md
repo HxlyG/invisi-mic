@@ -168,6 +168,7 @@ State fields:
 | `material`              | Backend wall-material key; empty until materials load                            |
 | `uploads`               | User-supplied tracks (uploaded or recorded); `src` is a blob URL                 |
 | `simAudio`              | Blob URLs of simulated audio, one per mic array in run order                     |
+| `beamAudio`             | Blob URLs of beamformed audio keyed by the speaker id the beam points at         |
 | `speakers`, `micArrays` | Placed items. Defaults: one speaker and one mic array                            |
 | `selected`              | `{ kind, id }` of the selected item, or `null`                                   |
 | `syncFocus`             | When true, every mic array shares one focus speaker                              |
@@ -175,18 +176,18 @@ State fields:
 
 Actions:
 
-| Action                                       | Behavior                                                                                                                                                      |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setRoom(partial)`                           | Merges room fields. Resizing width or length rescales an existing outline proportionally                                                                      |
-| `setRoomOutline({ outline, width, length })` | Replaces the room with a drawn outline, drops tiers/stage/pillars, clears `simAudio`, and moves any item outside the new outline back inside via `moveInside` |
-| `setMaterial`, `setUploads`, `setSimAudio`   | Simple setters                                                                                                                                                |
-| `loadSimulation(scene)`                      | Replaces room, material, items and `syncFocus`; clears selection and `simAudio`; recomputes counters from existing ids                                        |
-| `addItem({ kind, x, y })`                    | Adds an item at its default height, selects it, and inherits the shared focus when `syncFocus` is on                                                          |
-| `updateItem({ kind, id, patch })`            | Patches an item's position                                                                                                                                    |
-| `setFocus({ id, focusId })`                  | Sets one mic's focus, or all mics when `syncFocus` is on                                                                                                      |
-| `setTrack({ id, trackId })`                  | Assigns or clears a speaker's audio track                                                                                                                     |
-| `setSyncFocus(boolean)`                      | Turning on copies the first mic's focus to all; turning off clears every focus                                                                                |
-| `selectItem(ref \| null)`, `removeItem(ref)` | Selection and deletion                                                                                                                                        |
+| Action                                                     | Behavior                                                                                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setRoom(partial)`                                         | Merges room fields. Resizing width or length rescales an existing outline proportionally                                                                      |
+| `setRoomOutline({ outline, width, length })`               | Replaces the room with a drawn outline, drops tiers/stage/pillars, clears `simAudio`, and moves any item outside the new outline back inside via `moveInside` |
+| `setMaterial`, `setUploads`, `setSimAudio`, `setBeamAudio` | Simple setters                                                                                                                                                |
+| `loadSimulation(scene)`                                    | Replaces room, material, items and `syncFocus`; clears selection and `simAudio`; recomputes counters from existing ids                                        |
+| `addItem({ kind, x, y })`                                  | Adds an item at its default height, selects it, and inherits the shared focus when `syncFocus` is on                                                          |
+| `updateItem({ kind, id, patch })`                          | Patches an item's position                                                                                                                                    |
+| `setFocus({ id, focusId })`                                | Sets one mic's focus, or all mics when `syncFocus` is on                                                                                                      |
+| `setTrack({ id, trackId })`                                | Assigns or clears a speaker's audio track                                                                                                                     |
+| `setSyncFocus(boolean)`                                    | Turning on copies the first mic's focus to all; turning off clears every focus                                                                                |
+| `selectItem(ref \| null)`, `removeItem(ref)`               | Selection and deletion                                                                                                                                        |
 
 Exports worth knowing:
 
@@ -380,12 +381,13 @@ The backend validates lengths, material names, and rejects `talker_audio` entrie
 
 ### 8.3 Response fields used by the frontend
 
-| Field               | Use                                                                       |
-| ------------------- | ------------------------------------------------------------------------- |
-| `mic_audio[].audio` | Base64 WAV per mic array, converted to blob URLs and stored in `simAudio` |
-| `audio`             | Fallback array when `mic_audio` is absent                                 |
-| `rt60`              | Shown in the status message                                               |
-| `error`             | Displayed when the status is not OK                                       |
+| Field               | Use                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `mic_audio[].audio` | Base64 WAV per mic array, converted to blob URLs and stored in `simAudio`                                         |
+| `beamformed[]`      | `{ talker_index, audio }`: the mic mixture beamformed (LCMV with nulls and a mask) to isolate each speaker that has audio; stored in `beamAudio` keyed by speaker id |
+| `audio`             | Fallback array when `mic_audio` is absent                                                                         |
+| `rt60`              | Shown in the status message                                                                                       |
+| `error`             | Displayed when the status is not OK                                                                               |
 
 ### 8.4 `GET /api/materials` response
 

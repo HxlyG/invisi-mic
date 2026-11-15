@@ -44,6 +44,12 @@ export const SIMULATION_PRESETS: SimulationPreset[] = [
       material: "anechoic",
       speakers: [
         { id: "speaker-1", name: "Lectern", position: { x: 12, y: 2, z: 1.6 }, trackId: "lecture" },
+        // z is the tier elevation plus a seated head height of 1.2 m.
+        { id: "speaker-2", name: "Audience 1", position: { x: 9, y: 9, z: 2.2 }, trackId: "conversation" },
+        { id: "speaker-3", name: "Audience 2", position: { x: 15, y: 12.5, z: 2.7 }, trackId: "question" },
+        { id: "speaker-4", name: "Audience 3", position: { x: 9, y: 16, z: 3.2 }, trackId: "discussion" },
+        { id: "speaker-5", name: "Audience 4", position: { x: 15, y: 19.5, z: 3.7 }, trackId: "conversation" },
+        { id: "speaker-6", name: "Audience 5", position: { x: 9, y: 23, z: 4.2 }, trackId: "question" },
       ],
       micArrays: Array.from({ length: 18 }, (_, index) => {
         const row = Math.floor(index / 3)
@@ -77,6 +83,11 @@ export const SIMULATION_PRESETS: SimulationPreset[] = [
       material: "brickwork",
       speakers: [
         { id: "speaker-1", name: "Stage", position: { x: 7, y: 1.5, z: 2.25 }, trackId: "conversation" },
+        { id: "speaker-2", name: "Audience 1", position: { x: 5, y: 5.5, z: 1.2 }, trackId: "question" },
+        { id: "speaker-3", name: "Audience 2", position: { x: 9, y: 5.5, z: 1.2 }, trackId: "discussion" },
+        { id: "speaker-4", name: "Audience 3", position: { x: 7, y: 8.5, z: 1.2 }, trackId: "question" },
+        { id: "speaker-5", name: "Audience 4", position: { x: 5.2, y: 9.8, z: 1.2 }, trackId: "discussion" },
+        { id: "speaker-6", name: "Audience 5", position: { x: 8.8, y: 9.8, z: 1.2 }, trackId: "lecture" },
       ],
       micArrays: [
         ...[0, 1, 2, 3, 4].map((index) => {
@@ -112,6 +123,16 @@ export const SIMULATION_PRESETS: SimulationPreset[] = [
       speakers: [
         { id: "speaker-1", name: "Presenter 1", position: { x: 15, y: 2, z: 1.6 }, trackId: "discussion" },
         { id: "speaker-2", name: "Presenter 2", position: { x: 15, y: 3, z: 1.6 }, trackId: "question" },
+        // Attendees sit just outside the ring of table mics, between mic positions.
+        ...Array.from({ length: 6 }, (_, index) => {
+          const angle = 2 * Math.PI * (index + 0.5) / 6
+          return {
+            id: `speaker-${index + 3}`,
+            name: `Attendee ${index + 1}`,
+            position: { x: 16 + 9 * Math.cos(angle), y: 12 + 5.5 * Math.sin(angle), z: 1.2 },
+            trackId: ["conversation", "lecture", "question"][index % 3],
+          }
+        }),
       ],
       micArrays: Array.from({ length: 8 }, (_, index) => {
         const angle = 2 * Math.PI * index / 8

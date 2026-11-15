@@ -6,12 +6,17 @@ import { DRAW_AREA, type Point } from "@/lib/roomShape";
 
 // Hex values mirror the design tokens in styles/globals.css.
 const COLORS = {
-  canvas: 0x0b0d10,
-  floor: 0x0f1218,
-  grid: 0x1e2430,
-  wall: 0x94a3b8,
-  sonar: 0x22d3ee,
-  harmonic: 0xf59e0b,
+  floor: 0x11100f,
+  grid: 0x38312d,
+  wall: 0xddc9b6,
+  sonar: 0xddc9b6,
+  harmonic: 0xb30d17,
+  tier: 0x171513,
+  stage: 0x3a1115,
+  pillar: 0x302a26,
+  dimension: 0xa39385,
+  muted: 0x786b60,
+  invalid: 0xd43a40,
 };
 
 const BEAM_HALF_ANGLE = (15 * Math.PI) / 180;
@@ -123,7 +128,7 @@ function dimensionLabel(text: string, position: THREE.Vector3, worldWidth: numbe
   canvas.height = 96;
   const context = canvas.getContext("2d");
   if (!context) return null;
-  context.fillStyle = "#94a3b8";
+  context.fillStyle = `#${COLORS.sonar.toString(16).padStart(6, "0")}`;
   context.font = "600 42px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -150,7 +155,7 @@ function dimensionLine(scene: THREE.Scene, from: THREE.Vector3, to: THREE.Vector
     to.clone().sub(tickDirection), to.clone().add(tickDirection),
   ];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x64748b })));
+  scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: COLORS.dimension })));
   const midpoint = from.clone().add(to).multiplyScalar(0.5);
   const sprite = dimensionLabel(label, midpoint, labelWidth);
   if (sprite) {
@@ -206,7 +211,6 @@ export function buildScene(
   // Top-down hides height, so higher objects are drawn larger to suggest it.
   const heightScale = (z: number) => (view === "2d" ? 1 + 0.8 * (z / Math.max(room.height, 0.01)) : 1);
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(COLORS.canvas);
 
   const outline = roomOutline(room);
   const floorShape = new THREE.Shape();
@@ -216,9 +220,9 @@ export function buildScene(
   const floor = new THREE.Mesh(new THREE.ShapeGeometry(floorShape).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COLORS.floor }));
   scene.add(floor, gridLines(room));
 
-  for (const [index, tier] of (room.tiers ?? []).entries()) {
+  for (const tier of room.tiers ?? []) {
     const tierOutline = clipFootprint(outline, tier.startY, tier.endY);
-    const tierMesh = footprintMesh(tierOutline, tier.elevation, index % 2 ? 0x1b222d : 0x202834);
+    const tierMesh = footprintMesh(tierOutline, tier.elevation, COLORS.tier);
     if (tierMesh) scene.add(tierMesh);
   }
 
@@ -226,14 +230,14 @@ export function buildScene(
     const { x, y, width, length, elevation } = room.stage;
     const stage = new THREE.BoxGeometry(width, elevation, length).translate(x + width / 2, elevation / 2, y + length / 2);
     scene.add(
-      new THREE.Mesh(stage, new THREE.MeshBasicMaterial({ color: 0x33231f })),
+      new THREE.Mesh(stage, new THREE.MeshBasicMaterial({ color: COLORS.stage })),
       new THREE.LineSegments(new THREE.EdgesGeometry(stage), new THREE.LineBasicMaterial({ color: COLORS.harmonic })),
     );
   }
 
   for (const pillar of room.pillars ?? []) {
     const geometry = new THREE.CylinderGeometry(pillar.radius, pillar.radius, pillar.height, 24);
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x3a414c }));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: COLORS.pillar }));
     mesh.position.set(pillar.x, pillar.height / 2, pillar.y);
     scene.add(mesh);
     const outlineGeometry = new THREE.EdgesGeometry(geometry);
@@ -260,7 +264,7 @@ export function buildScene(
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.6, 0.64, 48),
       new THREE.MeshBasicMaterial({
-        color: 0x94a3b8,
+        color: COLORS.sonar,
         transparent: true,
         opacity: 0.65,
         side: THREE.DoubleSide,
@@ -329,11 +333,10 @@ export function buildScene(
 // Fixed top-down workspace the camera frames while drawing, so corners can sit outside the current room.
 export const DRAW_ROOM: Room = { ...DRAW_AREA, height: 3 };
 
-const DRAFT_INVALID = 0xef4444;
+const DRAFT_INVALID = COLORS.invalid;
 
 export function buildDraftScene(points: Point[], room: Room, unit: Unit) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(COLORS.canvas);
 
   const floorShape = new THREE.Shape();
   floorShape.moveTo(0, 0);
@@ -348,7 +351,7 @@ export function buildDraftScene(points: Point[], room: Room, unit: Unit) {
 
   // The room being replaced, as a dim reference.
   const previous = roomOutline(room).map((p) => new THREE.Vector3(p.x, 0.003, p.y));
-  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(previous), new THREE.LineBasicMaterial({ color: 0x334155 })));
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(previous), new THREE.LineBasicMaterial({ color: COLORS.muted })));
 
   if (points.length > 1) {
     const path = points.map((p) => new THREE.Vector3(p.x, 0.01, p.y));
@@ -386,7 +389,7 @@ export function buildDraftScene(points: Point[], room: Room, unit: Unit) {
   rubber.name = "draft-rubber";
   rubber.visible = false;
   rubber.frustumCulled = false;
-  const cursor = dot(0.14, 0xffffff, { x: 0, y: 0 }, 0.03);
+  const cursor = dot(0.14, COLORS.sonar, { x: 0, y: 0 }, 0.03);
   cursor.name = "draft-cursor";
   cursor.visible = false;
   scene.add(rubber, cursor);
@@ -402,7 +405,7 @@ export function updateDraftCursor(scene: THREE.Scene, last: Point | null, hover:
   const color = valid ? COLORS.sonar : DRAFT_INVALID;
   cursor.visible = true;
   cursor.position.set(hover.x, 0.03, hover.y);
-  (cursor.material as THREE.MeshBasicMaterial).color.setHex(valid ? 0xffffff : DRAFT_INVALID);
+  (cursor.material as THREE.MeshBasicMaterial).color.setHex(valid ? COLORS.sonar : DRAFT_INVALID);
   rubber.visible = last !== null;
   if (last) {
     rubber.geometry.setFromPoints([new THREE.Vector3(last.x, 0.015, last.y), new THREE.Vector3(hover.x, 0.015, hover.y)]);

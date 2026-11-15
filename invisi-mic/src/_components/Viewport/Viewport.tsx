@@ -84,7 +84,7 @@ export default function Viewport() {
     if (!host) return
     const state = latest.current
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     host.appendChild(renderer.domElement)
     const camera = createCamera()

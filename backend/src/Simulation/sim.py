@@ -18,6 +18,8 @@ MAX_ORDER = 8
 class SimulationResult(TypedDict):
     rt60: float | None
     audio: list[str] | None
+    # Mic signals before the output soft limiter, so the mixture stays linear for beamforming.
+    linear_audio: np.ndarray | None
 
 
 def get_materials() -> Any:
@@ -134,6 +136,7 @@ def shoebox_simulation(
     add_mics(mic_positions, room)
 
     mixed = None
+    linear = None
     if any(signal is not None for signal in signals):
         room.simulate()
         mic_array = room.mic_array
@@ -145,8 +148,10 @@ def shoebox_simulation(
         mixed = mic_signals[:, : SAMPLE_RATE * DURATION_SECONDS]
         # One shared gain keeps the relative level between mics; tanh soft-limits the loudest peaks.
         channel_rms = np.sqrt(np.mean(mixed**2, axis=1))
-        mixed = np.tanh(mixed * (OUTPUT_RMS / max(float(np.median(channel_rms)), 1e-9))) * 0.95
+        gain = OUTPUT_RMS / max(float(np.median(channel_rms)), 1e-9)
+        linear = mixed * gain
+        mixed = np.tanh(linear) * 0.95
 
     # Without a material the room is perfectly reflective and RT60 is infinite.
     rt60 = float(room.rt60_theory())
-    return {"rt60": rt60 if np.isfinite(rt60) else None, "audio": mixed}
+    return {"rt60": rt60 if np.isfinite(rt60) else None, "audio": mixed, "linear_audio": linear}

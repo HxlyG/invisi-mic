@@ -21,12 +21,15 @@ export interface Room {
 
 interface SceneState {
   room: Room;
+  roomCreationRevision: number;
   // Backend wall material key; empty until the materials list loads.
   material: string;
   // User-uploaded tracks; src is a blob URL.
   uploads: AudioTrack[];
   // Simulated audio blob URLs, one per mic array in run order.
   simAudio: string[];
+  // Beamformed audio blob URLs keyed by the speaker the beam points at.
+  beamAudio: Record<string, string>;
   speakers: SceneItem[];
   micArrays: SceneItem[];
   selected: ItemRef | null;
@@ -82,9 +85,11 @@ export const DEFAULT_HEIGHT: Record<ItemKind, number> = {
 
 const initialState: SceneState = {
   room: { width: 14, length: 10, height: 4.5 },
+  roomCreationRevision: 0,
   material: "",
   uploads: [],
   simAudio: [],
+  beamAudio: {},
   speakers: [{ id: "speaker-1", name: "Speaker 01", position: { x: 7, y: 1.5, z: DEFAULT_HEIGHT.speaker } }],
   micArrays: [{ id: "mic-1", name: "Mic array 01", position: { x: 7, y: 8.5, z: DEFAULT_HEIGHT.micArray }, focusId: "speaker-1" }],
   selected: { kind: "speaker", id: "speaker-1" },
@@ -113,7 +118,9 @@ export const sceneSlice = createSlice({
     setRoomOutline: (state, action: PayloadAction<{ outline: { x: number; y: number }[]; width: number; length: number }>) => {
       const { outline, width, length } = action.payload;
       state.room = { width, length, height: state.room.height, outline };
+      state.roomCreationRevision += 1;
       state.simAudio = [];
+      state.beamAudio = {};
       for (const item of [...state.speakers, ...state.micArrays]) {
         const { x, y } = moveInside(item.position, outline);
         item.position = { ...item.position, x, y };
@@ -128,6 +135,9 @@ export const sceneSlice = createSlice({
     setSimAudio: (state, action: PayloadAction<string[]>) => {
       state.simAudio = action.payload;
     },
+    setBeamAudio: (state, action: PayloadAction<Record<string, string>>) => {
+      state.beamAudio = action.payload;
+    },
     loadSimulation: (state, action: PayloadAction<ImportedScene>) => {
       const { room, material, speakers, micArrays, syncFocus } = action.payload;
       state.room = room;
@@ -137,6 +147,7 @@ export const sceneSlice = createSlice({
       state.syncFocus = syncFocus;
       state.selected = null;
       state.simAudio = [];
+      state.beamAudio = {};
       const nextCounter = (items: SceneItem[], prefix: string) => items.reduce((max, item) => {
         const match = item.id.match(new RegExp(`^${prefix}-(\\d+)$`));
         return match ? Math.max(max, Number(match[1])) : max;
@@ -197,5 +208,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, setRoomOutline, setMaterial, setUploads, setSimAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, setRoomOutline, setMaterial, setUploads, setSimAudio, setBeamAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;

@@ -202,9 +202,10 @@ def shared_onset_window(
 ) -> tuple[tuple[float, float], tuple[OnsetDetection, ...]]:
     """Detect channel onsets and make one shared recording-time crop.
 
-    The crop begins shortly before the earliest detected onset and continues
-    through the expected propagation spread plus ``event_duration_s``. Every
-    channel uses identical sample-time boundaries, preserving TDOA.
+    The crop is anchored to the median detected onset, then expanded backward
+    by the maximum physical inter-microphone delay and pre-roll. This prevents
+    one false-early channel trigger from moving the crop into background noise.
+    Every channel uses identical sample-time boundaries, preserving TDOA.
 
     ``noise_window_s`` is an optional shared recording interval known to be
     quiet. It is used only to calibrate each channel's energy threshold.
@@ -230,16 +231,22 @@ def shared_onset_window(
         detect_onset(signal, sample_rate, noise_window_s=noise_window_s)
         for signal in arrays
     )
-    earliest_onset = min(detection.onset_time_s for detection in detections)
+    onset_times = np.asarray(
+        [detection.onset_time_s for detection in detections], dtype=np.float64
+    )
+    onset_center = float(np.median(onset_times))
     recording_duration_s = arrays[0].size / sample_rate
 
     # Choose one common crop: preserve a little audio before the earliest
     # trigger, then allow for propagation to the farthest mic plus the event
     # duration. Identical crop boundaries preserve inter-mic arrival offsets.
-    start_s = max(0.0, earliest_onset - pre_roll_s)
+    start_s = max(
+        0.0,
+        onset_center - max_inter_mic_delay_s - pre_roll_s,
+    )
     end_s = min(
         recording_duration_s,
-        earliest_onset + max_inter_mic_delay_s + event_duration_s,
+        onset_center + event_duration_s,
     )
     if end_s <= start_s:
         raise ValueError("detected onset does not leave a usable shared window")

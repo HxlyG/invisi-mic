@@ -9,9 +9,9 @@
   container-type: inline-size;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--color-studio-850);
+  background: var(--surface-glass);
   border: 1px solid var(--color-studio-700);
-  border-radius: 12px;
+  border-radius: 20px;
   color: var(--color-chalk);
   font-size: 11px;
 }
@@ -44,7 +44,8 @@
   flex: 1;
   font-family: var(--font-display);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .headerIcon {
@@ -91,7 +92,7 @@
 
 .infoButton:hover,
 .infoButton:focus-visible {
-  color: var(--color-sonar-400);
+  color: var(--color-harmonic-300);
   border-color: var(--color-studio-700);
   outline: none;
 }
@@ -182,7 +183,7 @@
 }
 
 .field:focus-within {
-  border-color: var(--color-sonar-500);
+  border-color: var(--color-harmonic-400);
 }
 
 .input {
@@ -223,6 +224,10 @@
   border-radius: 6px;
   outline: none;
   cursor: pointer;
+}
+
+.select:focus-visible {
+  border-color: var(--color-harmonic-400);
 }
 
 .selectChevron {
@@ -271,7 +276,7 @@
 
 @keyframes recordingPulse {
   from { background: var(--color-studio-950); }
-  to { background: rgba(239, 68, 68, 0.18); }
+  to { background: color-mix(in srgb, var(--color-signal-red) 18%, transparent); }
 }
 
 .meta {
@@ -315,13 +320,13 @@
 .speakerIcon {
   color: var(--color-harmonic-500);
   border: 1px solid var(--color-harmonic-500);
-  background: rgba(245, 158, 11, 0.08);
+  background: color-mix(in srgb, var(--color-harmonic-500) 20%, transparent);
 }
 
 .micIcon {
   color: var(--color-sonar-400);
   border: 1px solid var(--color-sonar-400);
-  background: rgba(34, 211, 238, 0.08);
+  background: color-mix(in srgb, var(--color-sonar-400) 10%, transparent);
 }
 
 .nodeName {
@@ -387,7 +392,7 @@
 }
 
 .switchOn {
-  background: var(--color-sonar-400);
+  background: var(--gradient-accent);
 }
 
 .switchOn::after {
@@ -410,6 +415,7 @@
 .metricValue {
   font-family: var(--font-mono);
   font-size: 20px;
+  font-weight: 600;
   line-height: 1;
 }
 

@@ -11,19 +11,19 @@ export default function DropdownSection({ title, children }: DropdownSectionProp
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="border-b border-gray-200 py-3">
+    <div className="border-b border-[var(--color-studio-700)] py-3">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        className="flex w-full items-center justify-between text-left font-medium text-gray-900"
+        className="flex w-full items-center justify-between text-left font-medium text-[var(--color-chalk)]"
       >
         <span>{title}</span>
         <span>{isOpen ? "−" : "+"}</span>
       </button>
 
       {isOpen && (
-        <div className="mt-2 text-gray-600">
+        <div className="mt-2 text-[var(--color-slate-400)]">
           {children}
         </div>
       )}

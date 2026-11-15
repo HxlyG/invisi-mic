@@ -5,7 +5,7 @@ import styles from "./Sidebar.module.css"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { ACCEPTED_AUDIO, AUDIO_TRACKS, findTrack, isSupportedAudio, type AudioTrack } from "@/data/audioTracks"
-import { focusSpeaker, removeItem, setFocus, setMaterial, setRoom, setSyncFocus, setTrack, setUploads, updateItem } from "@/store/slices/sceneSlice"
+import { removeItem, setFocus, setMaterial, setRoom, setSyncFocus, setTrack, setUploads, updateItem } from "@/store/slices/sceneSlice"
 import { setShowBeams, setUnlocking } from "@/store/slices/toolSlice"
 
 const icon = {
@@ -80,33 +80,6 @@ function LengthField({ label, meters, unit, onChange }: LengthFieldProps) {
   )
 }
 
-interface MetricProps {
-  label: string
-  value: string
-  unit: string
-  valueClass?: string
-  percent?: number
-}
-
-function Metric({ label, value, unit, valueClass, percent }: MetricProps) {
-  return (
-    <div className={styles.metric}>
-      <div className={styles.metricHead}>
-        <span>{label}</span>
-        <span>
-          <span className={`${styles.metricValue} ${valueClass ?? ""}`}>{value}</span>
-          <span className={styles.metricUnit}>{unit}</span>
-        </span>
-      </div>
-      {percent !== undefined && (
-        <div className={styles.bar}>
-          <div className={styles.barFill} style={{ width: `${percent}%` }} />
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Sidebar() {
   const [roomOpen, setRoomOpen] = useState(false)
   const [nodeOpen, setNodeOpen] = useState(true)
@@ -114,11 +87,9 @@ export default function Sidebar() {
   const dispatch = useAppDispatch()
   const uploads = useAppSelector((state) => state.scene.uploads)
   const [materials, setMaterials] = useState<string[]>([])
-  const [absorptionByMaterial, setAbsorptionByMaterial] = useState<Record<string, number>>({})
   const [materialsError, setMaterialsError] = useState(false)
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
-  const [telemetryInfoOpen, setTelemetryInfoOpen] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState(false)
   const [uploadError, setUploadError] = useState(false)
@@ -137,16 +108,13 @@ export default function Sidebar() {
     fetch("/api/materials", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error("Materials request failed")
-        const body: { materials?: unknown; absorption?: unknown } = await response.json()
+        const body: { materials?: unknown } = await response.json()
         if (!Array.isArray(body.materials) || !body.materials.every((item) => typeof item === "string")) {
           throw new Error("Invalid materials response")
         }
         const names: string[] = body.materials
         if (active) {
           setMaterials(names)
-          if (body.absorption && typeof body.absorption === "object") {
-            setAbsorptionByMaterial(body.absorption as Record<string, number>)
-          }
           if (names[0]) dispatch(setMaterial(names[0]))
         }
       })
@@ -261,39 +229,8 @@ export default function Sidebar() {
       return area + point.x * next.y - next.x * point.y
     }, 0)) / 2
     : room.width * room.length
-  const footprintPerimeter = outline?.length
-    ? outline.reduce((perimeter, point, index) => {
-      const next = outline[(index + 1) % outline.length]
-      return perimeter + Math.hypot(next.x - point.x, next.y - point.y)
-    }, 0)
-    : 2 * (room.width + room.length)
   const roomVolume = footprintArea * room.height
-  const roomSurface = 2 * footprintArea + footprintPerimeter * room.height
   const volume = toDisplay(1, unit) ** 3 * roomVolume
-  const averageAbsorption = absorptionByMaterial[material] ?? 0.08
-  const rt60 = 0.161 * roomVolume / Math.max(roomSurface * averageAbsorption, 0.01)
-  const focusedDistances = micArrays
-    .map((mic) => {
-      const speaker = focusSpeaker(mic, speakers)
-      return speaker
-        ? Math.hypot(
-          speaker.position.x - mic.position.x,
-          speaker.position.y - mic.position.y,
-          speaker.position.z - mic.position.z,
-        )
-        : null
-    })
-    .filter((distance): distance is number => distance !== null)
-  const averageDistance = focusedDistances.length
-    ? focusedDistances.reduce((total, distance) => total + distance, 0) / focusedDistances.length
-    : null
-  const estimatedSnr = averageDistance === null
-    ? null
-    : Math.max(-10, Math.min(40, 65 - 20 * Math.log10(Math.max(averageDistance, 1)) - rt60 * 5 - 27))
-  const focusScore = averageDistance === null
-    ? null
-    : Math.max(0, Math.min(100, 100 - averageDistance * 2 + Math.min(micArrays.length - 1, 4) * 3))
-
   return (
     <aside className={`${styles.sidebar} hud-scroll`}>
       <div className={`${styles.section} ${styles.header}`}>
@@ -699,10 +636,6 @@ export default function Sidebar() {
         </div>
       </section> */}
 
-      <div className={styles.footer}>
-        <span>Simulation engine</span>
-        <span>v0.1.0 / PoC</span>
-      </div>
     </aside>
   )
 }
