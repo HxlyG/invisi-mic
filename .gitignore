@@ -11,7 +11,9 @@
 !.yarn/versions
 
 # testing
-/coverage
+backend/coverage
+backend/tests/*
+backend/data/speech/*
 
 # next.js
 /.next/
