@@ -45,3 +45,5 @@ next-env.d.ts
 venv
 __pycache__
 
+backend/dev-clean.tar.gz
+

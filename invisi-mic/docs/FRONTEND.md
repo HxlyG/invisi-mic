@@ -381,13 +381,13 @@ The backend validates lengths, material names, and rejects `talker_audio` entrie
 
 ### 8.3 Response fields used by the frontend
 
-| Field               | Use                                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `mic_audio[].audio` | Base64 WAV per mic array, converted to blob URLs and stored in `simAudio`                                         |
+| Field               | Use                                                                                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mic_audio[].audio` | Base64 WAV per mic array, converted to blob URLs and stored in `simAudio`                                                                                            |
 | `beamformed[]`      | `{ talker_index, audio }`: the mic mixture beamformed (LCMV with nulls and a mask) to isolate each speaker that has audio; stored in `beamAudio` keyed by speaker id |
-| `audio`             | Fallback array when `mic_audio` is absent                                                                         |
-| `rt60`              | Shown in the status message                                                                                       |
-| `error`             | Displayed when the status is not OK                                                                               |
+| `audio`             | Fallback array when `mic_audio` is absent                                                                                                                            |
+| `rt60`              | Shown in the status message                                                                                                                                          |
+| `error`             | Displayed when the status is not OK                                                                                                                                  |
 
 ### 8.4 `GET /api/materials` response
 
