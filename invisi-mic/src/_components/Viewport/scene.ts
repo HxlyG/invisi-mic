@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { ItemKind, ItemRef, Room, SceneItem, Vec3 } from "@/store/slices/sceneSlice";
+import { focusSpeaker } from "@/store/slices/sceneSlice";
 import type { ViewMode } from "@/store/slices/dimensionSlice";
 
 // Hex values mirror the design tokens in styles/globals.css.
@@ -106,10 +107,8 @@ export function buildScene(
     return ring;
   };
 
-  const speakerPositions: THREE.Vector3[] = [];
   for (const speaker of speakers) {
     const pos = toWorld(speaker.position);
-    speakerPositions.push(pos);
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.25, 24, 16),
       new THREE.MeshBasicMaterial({ color: COLORS.harmonic }),
@@ -133,12 +132,10 @@ export function buildScene(
     scene.add(hitTarget(itemName("micArray", micArray.id), pos));
     if (isSelected("micArray", micArray.id)) scene.add(highlight(pos));
 
-    // Each array aims at its nearest speaker.
-    const nearest = speakerPositions.reduce<THREE.Vector3 | null>(
-      (best, p) => (!best || p.distanceTo(pos) < best.distanceTo(pos) ? p : best),
-      null,
-    );
-    if (!nearest) continue;
+    // Each array aims at its chosen focus speaker, if any.
+    const target = focusSpeaker(micArray, speakers);
+    if (!target) continue;
+    const nearest = toWorld(target.position);
     const direction = nearest.clone().sub(pos);
     const length = direction.length();
     if (length <= 0.01) continue;

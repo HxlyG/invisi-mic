@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
-import { addItem, DEFAULT_HEIGHT, selectItem, updateItem, type ItemKind, type ItemRef } from "@/store/slices/sceneSlice"
+import { addItem, DEFAULT_HEIGHT, focusSpeaker, selectItem, updateItem, type ItemKind, type ItemRef } from "@/store/slices/sceneSlice"
+import { setTool } from "@/store/slices/toolSlice"
 import { buildScene, createCamera, DEFAULT_CAMERA, disposeScene, fitCamera, itemName, MAX_ELEVATION, parseItemName, type CameraState } from "./scene"
 import ViewCube from "./ViewCube"
 import styles from "./Viewport.module.css"
@@ -44,17 +45,14 @@ export default function Viewport() {
   // Aim from the dragged mic array to its nearest speaker: tilt is degrees below horizontal, bearing is 0 toward the front wall.
   let tilt = 0
   let bearing = 0
-  if (current && active?.kind === "micArray" && speakers.length > 0) {
+  if (current && active?.kind === "micArray") {
     const from = current.position
-    const nearest = speakers.reduce((best, s) =>
-      Math.hypot(s.position.x - from.x, s.position.y - from.y, s.position.z - from.z) <
-      Math.hypot(best.position.x - from.x, best.position.y - from.y, best.position.z - from.z)
-        ? s
-        : best,
-    )
-    const d = { x: nearest.position.x - from.x, y: nearest.position.y - from.y, z: nearest.position.z - from.z }
-    tilt = (Math.atan2(-d.z, Math.hypot(d.x, d.y)) * 180) / Math.PI
-    bearing = (Math.atan2(d.x, -d.y) * 180) / Math.PI
+    const nearest = focusSpeaker(current, speakers)
+    const d = nearest && { x: nearest.position.x - from.x, y: nearest.position.y - from.y, z: nearest.position.z - from.z }
+    if (d) {
+      tilt = (Math.atan2(-d.z, Math.hypot(d.x, d.y)) * 180) / Math.PI
+      bearing = (Math.atan2(d.x, -d.y) * 180) / Math.PI
+    }
   }
 
   // Kept in a ref so the resize observer always redraws with the newest view and room.
@@ -238,13 +236,16 @@ export default function Viewport() {
       // A click (not a drag): a placing tool creates an item, the select tool clears the selection.
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) {
         if (viewState.current.tool === "select") dispatch(selectItem(null))
-        else place(e)
+        else {
+          place(e)
+          dispatch(setTool("select"))
+        }
       }
 
       if (navigating || start) {
         navigating = false
         if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
-        canvas.style.cursor = viewState.current.tool !== "select" ? "crosshair" : "default"
+        canvas.style.cursor = "default"
         return
       }
       if (dragging) canvas.releasePointerCapture(e.pointerId)

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import styles from "./Sidebar.module.css"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
-import { removeItem, setRoom, updateItem } from "@/store/slices/sceneSlice"
+import { focusSpeaker, removeItem, setFocus, setRoom, setSyncFocus, updateItem } from "@/store/slices/sceneSlice"
 import { setUnlocking } from "@/store/slices/toolSlice"
 
 const icon = {
@@ -111,6 +111,7 @@ export default function Sidebar() {
   const [absorption, setAbsorption] = useState("drywall")
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
+  const [telemetryInfoOpen, setTelemetryInfoOpen] = useState(false)
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => () => {
@@ -126,8 +127,42 @@ export default function Sidebar() {
     return (ref.kind === "speaker" ? speakers : micArrays).find((i) => i.id === ref.id)
   })
   const unit = useAppSelector((state) => state.dimension.currentUnit)
+  const speakers = useAppSelector((state) => state.scene.speakers)
+  const micArrays = useAppSelector((state) => state.scene.micArrays)
+  const syncFocus = useAppSelector((state) => state.scene.syncFocus)
 
   const volume = toDisplay(1, unit) ** 3 * room.width * room.length * room.height
+  const roomVolume = room.width * room.length * room.height
+  const roomSurface = 2 * (room.width * room.length + room.width * room.height + room.length * room.height)
+  const absorptionCoefficient: Record<string, number> = {
+    drywall: 0.08,
+    concrete: 0.03,
+    glass: 0.02,
+    acoustic: 0.65,
+  }
+  const averageAbsorption = absorptionCoefficient[absorption] ?? absorptionCoefficient.drywall
+  const rt60 = 0.161 * roomVolume / Math.max(roomSurface * averageAbsorption, 0.01)
+  const focusedDistances = micArrays
+    .map((mic) => {
+      const speaker = focusSpeaker(mic, speakers)
+      return speaker
+        ? Math.hypot(
+          speaker.position.x - mic.position.x,
+          speaker.position.y - mic.position.y,
+          speaker.position.z - mic.position.z,
+        )
+        : null
+    })
+    .filter((distance): distance is number => distance !== null)
+  const averageDistance = focusedDistances.length
+    ? focusedDistances.reduce((total, distance) => total + distance, 0) / focusedDistances.length
+    : null
+  const estimatedSnr = averageDistance === null
+    ? null
+    : Math.max(-10, Math.min(40, 65 - 20 * Math.log10(Math.max(averageDistance, 1)) - rt60 * 5 - 27))
+  const focusScore = averageDistance === null
+    ? null
+    : Math.max(0, Math.min(100, 100 - averageDistance * 2 + Math.min(micArrays.length - 1, 4) * 3))
 
   return (
     <aside className={`${styles.sidebar} hud-scroll`}>
@@ -312,22 +347,103 @@ export default function Sidebar() {
       <section className={styles.section}>
         <div className={styles.header}>
           <svg {...icon} className={styles.headerIcon}>
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+          </svg>
+          <span className={styles.headerTitle}>Human speaker</span>
+        </div>
+        <div className={styles.body}>
+          {micArrays.length === 0 && <div className={styles.nodeKind}>No mic arrays</div>}
+          <div className={styles.lockRow}>
+            <span className={styles.lockText}>
+              Sync mics
+              <span className={styles.lockHint}>(one human)</span>
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={syncFocus}
+              aria-label="Sync all mic arrays to one human speaker"
+              className={`${styles.switch} ${syncFocus ? styles.switchOn : ""}`}
+              onClick={() => dispatch(setSyncFocus(!syncFocus))}
+            />
+          </div>
+          {syncFocus ? (
+            micArrays.length > 0 && (
+              <div>
+                <span className={styles.label}>All mics focus</span>
+                <div className={styles.selectWrap}>
+                  <select
+                    className={styles.select}
+                    value={micArrays[0].focusId && speakers.some((s) => s.id === micArrays[0].focusId) ? micArrays[0].focusId : ""}
+                    onChange={(e) => dispatch(setFocus({ id: micArrays[0].id, focusId: e.target.value || null }))}
+                  >
+                    <option value="">None</option>
+                    {speakers.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <svg {...icon} className={styles.selectChevron}>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </div>
+              </div>
+            )
+          ) : (
+            <div className={styles.nodeKind}>Each mic targets its nearest speaker.</div>
+          )}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.header}>
+          <svg {...icon} className={styles.headerIcon}>
             <path d="M2 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 13c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
           </svg>
           <span className={styles.headerTitle}>Acoustic telemetry</span>
-          <svg {...icon} className={styles.headerIcon}>
-            <circle cx="12" cy="12" r="9" />
-            <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.5M12 17h.01" />
-          </svg>
+          <button
+            type="button"
+            className={styles.infoButton}
+            aria-label="About acoustic telemetry"
+            aria-expanded={telemetryInfoOpen}
+            aria-controls="telemetry-info"
+            onClick={() => setTelemetryInfoOpen((open) => !open)}
+          >
+            <svg {...icon}>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.5M12 17h.01" />
+            </svg>
+          </button>
         </div>
 
         <div className={styles.body}>
-          <Metric label="Estimated SNR" value="+17.4" unit="dB" valueClass={styles.green} percent={58} />
-          <Metric label="Beam focus score" value="91" unit="%" valueClass={styles.cyan} percent={91} />
-          <Metric label="Reverb RT60" value="0.82" unit="s" />
+          {telemetryInfoOpen && (
+            <div className={styles.telemetryInfo} id="telemetry-info">
+              <strong>What these estimates mean</strong>
+              <p><b>Estimated SNR:</b> the target voice level compared with background noise. Higher is clearer.</p>
+              <p><b>Beam focus score:</b> how strongly the mic array is focused on the target speaker.</p>
+              <p><b>Reverb RT60:</b> estimated time for room sound to decay by 60 dB. Lower is less reverberant.</p>
+              <p><b>Target tracking:</b> indicates whether speaker tracking estimates are updating.</p>
+            </div>
+          )}
+          <Metric
+            label="Estimated SNR"
+            value={estimatedSnr === null ? "—" : `${estimatedSnr >= 0 ? "+" : ""}${estimatedSnr.toFixed(1)}`}
+            unit="dB"
+            valueClass={styles.green}
+            percent={estimatedSnr === null ? undefined : Math.max(0, Math.min(100, ((estimatedSnr + 10) / 50) * 100))}
+          />
+          <Metric
+            label="Beam focus score"
+            value={focusScore === null ? "—" : String(Math.round(focusScore))}
+            unit="%"
+            valueClass={styles.cyan}
+            percent={focusScore ?? undefined}
+          />
+          <Metric label="Reverb RT60" value={rt60.toFixed(2)} unit="s" />
           <div className={styles.statusLine}>
             <span className={styles.dot} />
-            Target tracking · estimates updating
+            {averageDistance === null ? "No speaker target · estimates limited" : "Room and target estimates updating"}
           </div>
         </div>
       </section>

@@ -18,6 +18,8 @@ interface SceneState {
   speakers: SceneItem[];
   micArrays: SceneItem[];
   selected: ItemRef | null;
+  // When on, every mic array shares one focus speaker.
+  syncFocus: boolean;
   // Running totals used to generate unique ids and names without randomness.
   counters: Record<ItemKind, number>;
 }
@@ -33,6 +35,22 @@ export interface SceneItem {
   id: string;
   name: string;
   position: Vec3;
+  // Mic arrays only: speaker to aim at; unset means no focus.
+  focusId?: string;
+}
+
+export function focusSpeaker(mic: SceneItem, speakers: SceneItem[]): SceneItem | undefined {
+  const selected = mic.focusId ? speakers.find((s) => s.id === mic.focusId) : undefined;
+  if (selected) return selected;
+  return speakers.reduce<SceneItem | undefined>((closest, speaker) => {
+    if (!closest) return speaker;
+    const distance = (item: SceneItem) => Math.hypot(
+      item.position.x - mic.position.x,
+      item.position.y - mic.position.y,
+      item.position.z - mic.position.z,
+    );
+    return distance(speaker) < distance(closest) ? speaker : closest;
+  }, undefined);
 }
 
 export const DEFAULT_HEIGHT: Record<ItemKind, number> = {
@@ -43,8 +61,9 @@ export const DEFAULT_HEIGHT: Record<ItemKind, number> = {
 const initialState: SceneState = {
   room: { width: 14, length: 10, height: 4.5 },
   speakers: [{ id: "speaker-1", name: "Speaker 01", position: { x: 7, y: 1.5, z: DEFAULT_HEIGHT.speaker } }],
-  micArrays: [{ id: "mic-1", name: "Mic array 01", position: { x: 7, y: 8.5, z: DEFAULT_HEIGHT.micArray } }],
+  micArrays: [{ id: "mic-1", name: "Mic array 01", position: { x: 7, y: 8.5, z: DEFAULT_HEIGHT.micArray }, focusId: "speaker-1" }],
   selected: { kind: "speaker", id: "speaker-1" },
+  syncFocus: false,
   counters: { speaker: 1, micArray: 1 },
 }
 
@@ -67,6 +86,7 @@ export const sceneSlice = createSlice({
         id,
         name: `${label} ${String(n).padStart(2, "0")}`,
         position: { x, y, z: DEFAULT_HEIGHT[kind] },
+        ...(kind === "micArray" && state.syncFocus ? { focusId: state.micArrays[0]?.focusId } : {}),
       });
       state.selected = { kind, id };
     },
@@ -74,6 +94,22 @@ export const sceneSlice = createSlice({
       const { kind, id, patch } = action.payload;
       const item = listFor(state, kind).find((i) => i.id === id);
       if (item) item.position = { ...item.position, ...patch };
+    },
+    setFocus: (state, action: PayloadAction<{ id: string; focusId: string | null }>) => {
+      const focusId = action.payload.focusId ?? undefined;
+      for (const mic of state.micArrays) {
+        if (state.syncFocus || mic.id === action.payload.id) mic.focusId = focusId;
+      }
+    },
+    setSyncFocus: (state, action: PayloadAction<boolean>) => {
+      state.syncFocus = action.payload;
+      if (action.payload) {
+        const firstMic = state.micArrays[0];
+        const shared = firstMic?.focusId ?? (firstMic ? focusSpeaker(firstMic, state.speakers)?.id : undefined);
+        for (const mic of state.micArrays) mic.focusId = shared;
+      } else {
+        for (const mic of state.micArrays) mic.focusId = undefined;
+      }
     },
     selectItem: (state, action: PayloadAction<ItemRef | null>) => {
       state.selected = action.payload;
@@ -88,5 +124,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, addItem, updateItem, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, addItem, updateItem, setFocus, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;

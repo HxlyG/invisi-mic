@@ -64,6 +64,48 @@
   text-align: left;
 }
 
+.infoButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  color: var(--color-slate-400);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.infoButton:hover,
+.infoButton:focus-visible {
+  color: var(--color-sonar-400);
+  border-color: var(--color-studio-700);
+  outline: none;
+}
+
+.telemetryInfo {
+  padding: 10px;
+  color: var(--color-slate-300);
+  background: var(--color-studio-950);
+  border: 1px solid var(--color-studio-700);
+  border-radius: 6px;
+  line-height: 1.5;
+}
+
+.telemetryInfo strong {
+  color: var(--color-chalk);
+}
+
+.telemetryInfo p {
+  margin: 7px 0 0;
+}
+
+.telemetryInfo b {
+  color: var(--color-chalk);
+}
+
 .chevron {
   color: var(--color-slate-400);
   transition: transform 0.15s;
