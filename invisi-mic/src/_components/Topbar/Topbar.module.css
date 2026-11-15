@@ -174,11 +174,22 @@
   border-radius: 50%;
 }
 
+.dotDisconnected {
+  background: var(--color-signal-red);
+}
+
 .latency {
   color: var(--accent);
 }
 
 .demo {
+  font-size: 10px;
+}
+
+.runMessage {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 10px;
 }
 
@@ -207,4 +218,9 @@
 
 .topbar .runBtn:hover {
   filter: brightness(1.3);
+}
+
+.topbar .runBtn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }

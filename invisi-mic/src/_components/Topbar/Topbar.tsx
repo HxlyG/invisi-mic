@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { setUnit, setViewMode } from "@/store/slices/dimensionSlice"
 import styles from "./Topbar.module.css"
@@ -16,9 +17,59 @@ const icon = {
 }
 
 export default function Topbar() {
+  const [apiState, setApiState] = useState<"checking" | "connected" | "disconnected">("checking")
+  const [running, setRunning] = useState(false)
+  const [latency, setLatency] = useState<number | null>(null)
+  const [runMessage, setRunMessage] = useState("")
   const dispatch = useAppDispatch()
   const view = useAppSelector((state) => state.dimension.viewMode)
   const unit = useAppSelector((state) => state.dimension.currentUnit)
+  const room = useAppSelector((state) => state.scene.room)
+  const speakers = useAppSelector((state) => state.scene.speakers)
+  const micArrays = useAppSelector((state) => state.scene.micArrays)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch("/api/simulation", { signal: controller.signal, cache: "no-store" })
+      .then((response) => setApiState(response.ok ? "connected" : "disconnected"))
+      .catch(() => {
+        if (!controller.signal.aborted) setApiState("disconnected")
+      })
+    return () => controller.abort()
+  }, [])
+
+  const runSimulation = async () => {
+    setRunning(true)
+    setRunMessage("")
+    const startedAt = performance.now()
+    try {
+      const is2d = view === "2d"
+      const response = await fetch("/api/simulation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          is_2_dimensional: is2d,
+          shoebox: is2d ? [room.width, room.length] : [room.width, room.length, room.height],
+          mics: micArrays.map(({ position }) => is2d
+            ? [position.x, position.y]
+            : [position.x, position.y, position.z]),
+          talkers: speakers.map(({ position }) => is2d
+            ? [position.x, position.y]
+            : [position.x, position.y, position.z]),
+        }),
+      })
+      const result = await response.json()
+      setLatency(Math.round(performance.now() - startedAt))
+      if (!response.ok) throw new Error(result.error ?? "Simulation request failed")
+      setApiState("connected")
+      setRunMessage("Simulation request completed")
+    } catch (error) {
+      setApiState("disconnected")
+      setRunMessage(error instanceof Error ? error.message : "Simulation request failed")
+    } finally {
+      setRunning(false)
+    }
+  }
 
   return (
     <header className={`${styles.topbar} p-10 `}>
@@ -105,11 +156,10 @@ export default function Topbar() {
       <div className={styles.spacer} />
 
       <div className={styles.status}>
-        <span className={styles.dot} />
-        <span>Array connected</span>
-        <span>·</span>
-        <span className={styles.latency}>12 ms</span>
-        <span className={styles.demo}>DEMO</span>
+        <span className={`${styles.dot} ${apiState === "disconnected" ? styles.dotDisconnected : ""}`} />
+        <span>{apiState === "checking" ? "Connecting…" : apiState === "connected" ? "API connected" : "API offline"}</span>
+        {latency !== null && <span className={styles.latency}>· {latency} ms</span>}
+        {runMessage && <span className={styles.runMessage} role="status">{runMessage}</span>}
       </div>
 
       <button className={styles.exportBtn}>
@@ -119,11 +169,11 @@ export default function Topbar() {
         Export JSON
       </button>
 
-      <button className={styles.runBtn}>
+      <button className={styles.runBtn} onClick={runSimulation} disabled={running || apiState === "checking"}>
         <svg {...icon} width={20} height={20} fill="currentColor" stroke="none">
           <path d="M6 3.5v17a1 1 0 0 0 1.5.9l14-8.5a1 1 0 0 0 0-1.8l-14-8.5A1 1 0 0 0 6 3.5Z" />
         </svg>
-        Run Simulation
+        {running ? "Running…" : "Run Simulation"}
       </button>
     </header>
   )

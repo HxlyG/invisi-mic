@@ -37,6 +37,8 @@ export interface SceneItem {
   position: Vec3;
   // Mic arrays only: speaker to aim at; unset means no focus.
   focusId?: string;
+  // Speakers only: preset audio track id; unset means silent.
+  trackId?: string;
 }
 
 export function focusSpeaker(mic: SceneItem, speakers: SceneItem[]): SceneItem | undefined {
@@ -101,6 +103,10 @@ export const sceneSlice = createSlice({
         if (state.syncFocus || mic.id === action.payload.id) mic.focusId = focusId;
       }
     },
+    setTrack: (state, action: PayloadAction<{ id: string; trackId: string | null }>) => {
+      const speaker = state.speakers.find((s) => s.id === action.payload.id);
+      if (speaker) speaker.trackId = action.payload.trackId ?? undefined;
+    },
     setSyncFocus: (state, action: PayloadAction<boolean>) => {
       state.syncFocus = action.payload;
       if (action.payload) {
@@ -124,5 +130,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, addItem, updateItem, setFocus, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;

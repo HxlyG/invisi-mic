@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import styles from "./Sidebar.module.css"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
-import { focusSpeaker, removeItem, setFocus, setRoom, setSyncFocus, updateItem } from "@/store/slices/sceneSlice"
+import { ACCEPTED_AUDIO, AUDIO_TRACKS, findTrack, isSupportedAudio, type AudioTrack } from "@/data/audioTracks"
+import { focusSpeaker, removeItem, setFocus, setRoom, setSyncFocus, setTrack, updateItem } from "@/store/slices/sceneSlice"
 import { setUnlocking } from "@/store/slices/toolSlice"
 
 const icon = {
@@ -112,11 +113,50 @@ export default function Sidebar() {
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
   const [telemetryInfoOpen, setTelemetryInfoOpen] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewError, setPreviewError] = useState(false)
+  const [uploads, setUploads] = useState<AudioTrack[]>([])
+  const [uploadError, setUploadError] = useState(false)
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previewAudio = useRef<HTMLAudioElement | null>(null)
+  const uploadsRef = useRef<AudioTrack[]>([])
+  const fileInput = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => () => {
     if (lockTimer.current) clearTimeout(lockTimer.current)
+    previewAudio.current?.pause()
+    uploadsRef.current.forEach((track) => URL.revokeObjectURL(track.src))
   }, [])
+
+  const tracks = [...AUDIO_TRACKS, ...uploads]
+
+  const selectedId = useAppSelector((state) => state.scene.selected?.id)
+
+  // Pausing fires onpause, which resets the preview state.
+  useEffect(() => () => previewAudio.current?.pause(), [selectedId])
+
+  const stopPreview = () => {
+    previewAudio.current?.pause()
+    previewAudio.current = null
+  }
+
+  const togglePreview = (src: string) => {
+    if (previewing) return stopPreview()
+    setPreviewError(false)
+    const audio = new Audio(src)
+    audio.onpause = () => setPreviewing(false)
+    audio.onended = () => setPreviewing(false)
+    audio.onerror = () => {
+      setPreviewError(true)
+      setPreviewing(false)
+    }
+    previewAudio.current = audio
+    setPreviewing(true)
+    audio.play().catch(() => {
+      setPreviewError(true)
+      setPreviewing(false)
+    })
+  }
 
   const dispatch = useAppDispatch()
   const room = useAppSelector((state) => state.scene.room)
@@ -305,6 +345,80 @@ export default function Sidebar() {
             {selected.kind === "speaker" && (
               <>
                 <Field label="Voice level" unit="dB SPL" value={voice} onChange={setVoice} />
+
+                <div>
+                  <span className={styles.label}>Audio track</span>
+                  <div className={styles.trackRow}>
+                    <div className={`${styles.selectWrap} ${styles.trackSelect}`}>
+                      <select
+                        className={styles.select}
+                        value={findTrack(node.trackId, tracks)?.id ?? ""}
+                        onChange={(e) => {
+                          stopPreview()
+                          setPreviewError(false)
+                          dispatch(setTrack({ id: selected.id, trackId: e.target.value || null }))
+                        }}
+                      >
+                        <option value="">None (silent)</option>
+                        {tracks.map((track) => (
+                          <option key={track.id} value={track.id}>{track.name}</option>
+                        ))}
+                      </select>
+                      <svg {...icon} className={styles.selectChevron}>
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.previewBtn}
+                      aria-label={previewing ? "Stop preview" : "Preview track"}
+                      disabled={!findTrack(node.trackId, tracks)}
+                      onClick={() => {
+                        const track = findTrack(node.trackId, tracks)
+                        if (track) togglePreview(track.src)
+                      }}
+                    >
+                      <svg {...icon} fill="currentColor" stroke="none">
+                        {previewing ? <rect x="6" y="6" width="12" height="12" rx="1" /> : <path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5Z" />}
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.previewBtn}
+                      aria-label="Upload MP3 or WAV file"
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      <svg {...icon}>
+                        <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
+                      </svg>
+                    </button>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      accept={ACCEPTED_AUDIO}
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ""
+                        if (!file) return
+                        if (!isSupportedAudio(file)) return setUploadError(true)
+                        setUploadError(false)
+                        setPreviewError(false)
+                        stopPreview()
+                        const track: AudioTrack = {
+                          id: `upload-${uploadsRef.current.length + 1}`,
+                          name: file.name,
+                          src: URL.createObjectURL(file),
+                        }
+                        uploadsRef.current = [...uploadsRef.current, track]
+                        setUploads(uploadsRef.current)
+                        dispatch(setTrack({ id: selected.id, trackId: track.id }))
+                      }}
+                    />
+                  </div>
+                  {previewError && <div className={styles.nodeKind}>Unable to play track</div>}
+                  {uploadError && <div className={styles.nodeKind}>Only MP3 or WAV files are supported</div>}
+                </div>
 
                 <div className={styles.lockRow}>
                   <svg {...icon} className={styles.lockIcon}>
