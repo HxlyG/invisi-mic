@@ -115,6 +115,7 @@ def data():
     audio_channels = result["audio"]
     if audio_channels is None:
         audio_channels = []
+    estimated_positions = []
     beamformed_list = []
 
     # Beams come from the recorded mixture only; talkers without audio make no sound to isolate.
@@ -133,31 +134,36 @@ def data():
         except Exception as e:
             print(f"Error beamforming: {e}")
 
-    # The estimate depends only on the mic recordings, so it is computed once rather than per talker.
-    localized = None
-    try:
-        raw_tdoa = estimate_tdoa_with_onset_window(
-            audio_channels,
-            SAMPLE_RATE,
-            max_inter_mic_delay_s=0.01,
-            pre_roll_s=0.01,
-            event_duration_s=0.1,
-            noise_window_s=(0.0, 0.1)
-        )
-        tdoa_result = raw_tdoa[0] if isinstance(raw_tdoa, tuple) else raw_tdoa
-        sound_localization_result = solve_position(
-            mics,
-            tdoa_result,
-            speed_of_sound=SPEED_OF_SOUND,
-            room_dimensions=shoebox
-        )
-        if sound_localization_result.success:
-            localized = sound_localization_result.position
-    except Exception as e:
-        print(f"Error localizing: {e}")
-    estimated_positions = [localized if localized is not None else pos for pos in talkers]
-
     for talker_index, talker_pos in enumerate(talkers):
+        try:
+            # 1. Compute TDOA relative to the current talker / onset window
+            raw_tdoa = estimate_tdoa_with_onset_window(
+                audio_channels, 
+                SAMPLE_RATE, 
+                max_inter_mic_delay_s=0.01, 
+                pre_roll_s=0.01, 
+                event_duration_s=0.1, 
+                noise_window_s=(0.0, 0.1)
+            )
+            tdoa_result = raw_tdoa[0] if isinstance(raw_tdoa, tuple) else raw_tdoa
+
+            # 2. Solve position independently
+            sound_localization_result = solve_position(
+                mics, 
+                tdoa_result, 
+                speed_of_sound=SPEED_OF_SOUND, 
+                room_dimensions=shoebox
+            )
+
+            if sound_localization_result.success:
+                estimated_positions.append(sound_localization_result.position)
+            else:
+                estimated_positions.append(talker_pos)
+
+        except Exception as e:
+            print(f"Error localizing talker {talker_index}: {e}")
+            estimated_positions.append(talker_pos)
+
         beam = beams.get(talker_index)
         if beam is not None:
             beamformed_list.append({
