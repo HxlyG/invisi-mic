@@ -55,6 +55,10 @@ def shoebox_simulation(shoebox_dims, mic_positions, talker_positions: list[list[
         )
 
     ax.legend(loc="upper right")
-    room.simulate()
-    # plt.show()
-    # plt.close(fig)
+
+    room.compute_rir()
+    rir_fig, rir_axes = room.plot_rir(kind="ir")
+
+    plt.show()
+    plt.close(fig)
+    plt.close(rir_fig)
