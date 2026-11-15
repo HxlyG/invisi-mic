@@ -2,57 +2,64 @@
 
 /*
  * BeamStage Design Tokens
- * Single source of truth for the "Dark Control Booth" color system.
+ * Single source of truth for the color system, sampled from the proposal-deck
+ * reference: near-black surfaces, warm beige text and accents, crimson highlights.
  * Tailwind colors in tailwind.config.js reference these variables,
  * so changing a value here updates both utility classes and raw CSS.
  */
 :root {
   color-scheme: dark;
 
-  /* — Surface ramps — */
-  --color-obsidian: #0b0d10; /* Obsidian Void — viewport canvas bg */
-  --color-studio-950: #0b0d10;
-  --color-studio-900: #0f1218; /* room fill */
-  --color-studio-850: #151921; /* Studio Slate — HUD panels */
-  --color-studio-800: #1a1f29; /* hover surface */
-  --color-studio-700: #262c3a; /* 1px borders */
-  --color-studio-600: #353d50; /* active surface / scrollbar hover */
+  /* — Surface ramps (dark to light) — */
+  --color-obsidian: #050505; /* viewport canvas bg */
+  --color-studio-950: #0b0a09; /* inputs */
+  --color-studio-900: #11100f; /* room fill */
+  --color-studio-850: #171513; /* HUD panels */
+  --color-studio-800: #211e1b; /* hover surface */
+  --color-studio-700: #38312d; /* 1px borders */
+  --color-studio-600: #574b43; /* active surface / scrollbar hover */
 
   /* — Text — */
-  --color-chalk: #f1f5f9; /* Crisp Chalk — primary text & room vectors */
-  --color-slate-400: #94a3b8; /* secondary labels */
-  --color-slate-500: #64748b;
-  --color-slate-600: #475569;
+  --color-chalk: #ddc9b6; /* primary text & room vectors */
+  --color-slate-300: #c9b8a8;
+  --color-slate-400: #a39385; /* secondary labels */
+  --color-slate-500: #786b60;
+  --color-slate-600: #51463e;
 
   /* — Grid — */
-  --color-grid-dot: #1e2430; /* architectural dot/line grid */
+  --color-grid-dot: #282320; /* architectural dot/line grid */
 
-  /* — Sonar Cyan — primary accent (mic arrays & beamforming cones) — */
-  --color-sonar-50: #ecfeff;
-  --color-sonar-300: #67e8f9;
-  --color-sonar-400: #22d3ee;
-  --color-sonar-500: #06b6d4;
-  --color-sonar-600: #0891b2;
-  --color-sonar-700: #0e7490;
+  /* — Primary accent: beige (mic arrays & beamforming cones) — */
+  --color-sonar-50: #f4ece3;
+  --color-sonar-300: #e8d9c9;
+  --color-sonar-400: #ddc9b6;
+  --color-sonar-500: #d3bca6;
+  --color-sonar-600: #b9a28b;
+  --color-sonar-700: #8e7c6a;
 
-  /* — Harmonic Amber — secondary signal accent (speakers & voice activity) — */
-  --color-harmonic-300: #fcd34d;
-  --color-harmonic-400: #fbbf24;
-  --color-harmonic-500: #f59e0b;
-  --color-harmonic-600: #d97706;
+  /* — Secondary accent: crimson (speakers, voice activity, primary buttons) — */
+  --color-harmonic-300: #d43a40;
+  --color-harmonic-400: #c51c25;
+  --color-harmonic-500: #b30d17;
+  --color-harmonic-600: #850b12;
 
   /* — Status indicators — */
-  --color-signal-green: #10b981; /* optimal pickup / hardware connected */
-  --color-signal-red: #ef4444; /* dead zones / clipping */
+  --color-signal-green: var(--color-sonar-400); /* positive / connected state */
+  --color-signal-red: var(--color-harmonic-300); /* dead zones / clipping */
 
   /* — Typography — */
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-sans: 'Inter', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: var(--font-montserrat), 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: var(--font-inter), 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   /* — Shadows / glows — */
-  --shadow-sonar-glow: 0 0 12px rgba(6, 182, 212, 0.4);
-  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-sonar-glow: 0 0 12px rgba(221, 201, 182, 0.3);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.55);
+
+  /* — Gradients, glass & grain — */
+  --gradient-backdrop: #050505;
+  --gradient-accent: var(--color-harmonic-500);
+  --surface-glass: #11100f;
 }
 
 html,
@@ -112,11 +119,11 @@ input[type='range'].sonar-range::-webkit-slider-thumb {
   background: var(--color-sonar-500);
   cursor: pointer;
   border: 2px solid var(--color-obsidian);
-  box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+  box-shadow: 0 0 8px rgba(221, 201, 182, 0.35);
 }
 input[type='range'].harmonic-range::-webkit-slider-thumb {
   background: var(--color-harmonic-500);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 8px rgba(179, 20, 27, 0.6);
 }
 
 /* Hide number input spinners */

@@ -21,6 +21,7 @@ export interface Room {
 
 interface SceneState {
   room: Room;
+  roomCreationRevision: number;
   // Backend wall material key; empty until the materials list loads.
   material: string;
   // User-uploaded tracks; src is a blob URL.
@@ -82,6 +83,7 @@ export const DEFAULT_HEIGHT: Record<ItemKind, number> = {
 
 const initialState: SceneState = {
   room: { width: 14, length: 10, height: 4.5 },
+  roomCreationRevision: 0,
   material: "",
   uploads: [],
   simAudio: [],
@@ -113,6 +115,7 @@ export const sceneSlice = createSlice({
     setRoomOutline: (state, action: PayloadAction<{ outline: { x: number; y: number }[]; width: number; length: number }>) => {
       const { outline, width, length } = action.payload;
       state.room = { width, length, height: state.room.height, outline };
+      state.roomCreationRevision += 1;
       state.simAudio = [];
       for (const item of [...state.speakers, ...state.micArrays]) {
         const { x, y } = moveInside(item.position, outline);

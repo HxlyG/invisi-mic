@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { setUnit, setViewMode } from "@/store/slices/dimensionSlice"
 import { loadSimulation, setSimAudio, type ImportedScene, type SceneItem } from "@/store/slices/sceneSlice"
@@ -26,6 +26,11 @@ export default function Topbar() {
   const [latency, setLatency] = useState<number | null>(null)
   const [runMessage, setRunMessage] = useState("")
   const [activePreset, setActivePreset] = useState("custom")
+  type SavedCustomScene = ImportedScene & { view: typeof view; unit: typeof unit }
+  const [savedCustomRooms, setSavedCustomRooms] = useState<{ id: string; name: string; scene: SavedCustomScene }[]>([])
+  const customScene = useRef<SavedCustomScene | null>(null)
+  const customId = useRef("custom")
+  const lastRoomCreationRevision = useRef(0)
   const importInput = useRef<HTMLInputElement | null>(null)
   const dispatch = useAppDispatch()
   const view = useAppSelector((state) => state.dimension.viewMode)
@@ -37,6 +42,31 @@ export default function Topbar() {
   const syncFocus = useAppSelector((state) => state.scene.syncFocus)
   const uploads = useAppSelector((state) => state.scene.uploads)
   const simAudio = useAppSelector((state) => state.scene.simAudio)
+  const roomCreationRevision = useAppSelector((state) => state.scene.roomCreationRevision)
+  const customRooms = useMemo(() => savedCustomRooms.map((entry) =>
+    entry.id === activePreset
+      ? { ...entry, scene: structuredClone({ room, material, speakers, micArrays, syncFocus, view, unit }) }
+      : entry,
+  ), [savedCustomRooms, activePreset, room, material, speakers, micArrays, syncFocus, view, unit])
+
+  const importing = useRef(false)
+  useEffect(() => {
+    const currentScene: SavedCustomScene = { room, material, speakers, micArrays, syncFocus, view, unit }
+    const isNewDrawnRoom = roomCreationRevision !== lastRoomCreationRevision.current
+    lastRoomCreationRevision.current = roomCreationRevision
+    const wasImporting = importing.current
+    importing.current = false
+    if (isNewDrawnRoom && !wasImporting && room.outline?.length) {
+      const id = `custom-room-${Date.now()}`
+      customId.current = id
+      setActivePreset(id)
+      setSavedCustomRooms((rooms) => [...rooms, { id, name: `Custom room ${rooms.length + 1}`, scene: structuredClone(currentScene) }])
+      customScene.current = structuredClone(currentScene)
+      return
+    }
+    if (activePreset !== "custom" && !activePreset.startsWith("custom-room-")) return
+    customScene.current = structuredClone(currentScene)
+  }, [activePreset, room, material, speakers, micArrays, syncFocus, view, unit, roomCreationRevision])
 
   useEffect(() => () => simAudio.forEach((url) => URL.revokeObjectURL(url)), [simAudio])
   useEffect(() => {
@@ -104,8 +134,30 @@ export default function Topbar() {
 
   const applyPreset = (presetId: string) => {
     const preset = SIMULATION_PRESETS.find((entry) => entry.id === presetId)
+    const savedCustom = customRooms.find((entry) => entry.id === presetId)
+    if (!preset && savedCustom) {
+      customId.current = presetId
+      setActivePreset(presetId)
+      const { view: savedView, unit: savedUnit, ...scene } = structuredClone(savedCustom.scene)
+      dispatch(loadSimulation(scene))
+      dispatch(setViewMode(savedView))
+      dispatch(setUnit(savedUnit))
+      return
+    }
     setActivePreset(preset ? presetId : "custom")
-    if (!preset) return
+    if (!preset) {
+      if (customScene.current) {
+        const { view: customView, unit: customUnit, ...scene } = customScene.current
+        dispatch(loadSimulation(scene))
+        dispatch(setViewMode(customView))
+        dispatch(setUnit(customUnit))
+        customId.current = "custom"
+      }
+      return
+    }
+    if (!customScene.current || activePreset === "custom" || activePreset.startsWith("custom-room-")) {
+      customScene.current = structuredClone({ room, material, speakers, micArrays, syncFocus, view, unit })
+    }
     dispatch(loadSimulation(preset.scene))
     dispatch(setViewMode("3d"))
     dispatch(setUnit("m"))
@@ -270,6 +322,9 @@ export default function Topbar() {
       if (!importedView) throw new Error("View must be either 2d or 3d")
 
       dispatch(loadSimulation(scene))
+      importing.current = true
+      customScene.current = null
+      setActivePreset("custom")
       dispatch(setViewMode(importedView))
       dispatch(setUnit("m"))
       const includesUploads = input.speakers.some((item) => {
@@ -285,13 +340,12 @@ export default function Topbar() {
   }
 
   return (
-    <header className={`${styles.topbar} p-10 `}>
+    <header className={styles.topbar}>
       <div className={styles.brand}>
         <svg {...icon} width={30} height={30} stroke="var(--color-sonar-400)">
           <path d="M3 10v4M7 6v12M11 3v18M15 7v10M19 10v4" />
         </svg>
         <span className={styles.title}>BeamStage</span>
-        <span className={styles.badge}>PoC</span>
       </div>
 
       <div className={styles.divider} />
@@ -305,6 +359,9 @@ export default function Topbar() {
           aria-label="Load simulation preset"
         >
           <option value="custom">Custom layout</option>
+          {customRooms.map((entry) => (
+            <option key={entry.id} value={entry.id}>{entry.name}</option>
+          ))}
           {SIMULATION_PRESETS.map((preset) => (
             <option key={preset.id} value={preset.id}>{preset.name}</option>
           ))}

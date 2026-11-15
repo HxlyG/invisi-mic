@@ -12,7 +12,6 @@
 
 # testing
 backend/coverage
-backend/tests/*
 backend/data/speech/*
 
 # next.js

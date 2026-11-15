@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.signal import butter, find_peaks, sosfiltfilt
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ def estimate_delay(
 	max_delay_s: float | None = None,
 	interpolation: int = 16,
 	time_window_s: tuple[float, float] | None = None,
+		phat_beta: float = 1.0,
+		frequency_band_hz: tuple[float, float] | None = None,
 ) -> DelayEstimate:
 	"""Estimate the relative arrival delay using GCC-PHAT.
 
@@ -41,6 +44,9 @@ def estimate_delay(
 			Set this from the maximum physical microphone spacing when known.
 		interpolation: Frequency-domain interpolation factor for sub-sample
 			delay estimates. Larger values increase computation.
+		phat_beta: Whitening exponent in ``|G_ab| ** beta``. One is standard
+			PHAT; values below one retain more spectral magnitude information.
+		frequency_band_hz: Optional ``(low, high)`` band-pass limits in Hz.
 		time_window_s: Optional ``(start, end)`` crop in seconds from the
 			shared recording start. The same interval is applied to both signals;
 			this preserves their relative arrival offset. It does not by itself
@@ -62,6 +68,20 @@ def estimate_delay(
 		raise ValueError("interpolation must be a positive integer")
 	if interpolation < 1:
 		raise ValueError("interpolation must be a positive integer")
+	if not np.isfinite(phat_beta) or not 0 < phat_beta <= 1:
+		raise ValueError("phat_beta must be in the interval (0, 1]")
+	if frequency_band_hz is not None:
+		if len(frequency_band_hz) != 2:
+			raise ValueError("frequency_band_hz must be a (low, high) pair")
+		low_hz, high_hz = frequency_band_hz
+		if (
+			not np.isfinite(low_hz)
+			or not np.isfinite(high_hz)
+			or low_hz <= 0
+			or high_hz <= low_hz
+			or high_hz >= sample_rate / 2
+		):
+			raise ValueError("frequency_band_hz must satisfy 0 < low < high < Nyquist")
 	if max_delay_s is not None and (
 		not np.isfinite(max_delay_s) or max_delay_s < 0
 	):
@@ -83,6 +103,13 @@ def estimate_delay(
 			raise ValueError("time_window_s extends beyond the shorter signal")
 		a = a[start_sample:end_sample]
 		b = b[start_sample:end_sample]
+	if frequency_band_hz is not None:
+		sos = butter(4, frequency_band_hz, btype="bandpass", fs=sample_rate, output="sos")
+		try:
+			a = sosfiltfilt(sos, a)
+			b = sosfiltfilt(sos, b)
+		except ValueError as error:
+			raise ValueError("signals are too short for the requested band-pass filter") from error
 
 	# Remove DC so it cannot dominate the phase-weighted correlation.
 	a = a - np.mean(a)
@@ -101,11 +128,12 @@ def estimate_delay(
 	nonzero_bins = magnitude > np.finfo(float).eps * magnitude.max()
 	if not np.any(nonzero_bins):
 		raise ValueError("signals do not contain enough information to correlate")
+	weighting = np.power(magnitude, phat_beta)
 	cross_spectrum = np.divide(
 		cross_spectrum,
-		magnitude,
+		weighting,
 		out=np.zeros_like(cross_spectrum),
-		where=nonzero_bins,
+		where=nonzero_bins & (weighting > 0),
 	)
 
 	# A longer inverse transform zero-pads the cross-spectrum, interpolating
@@ -149,6 +177,91 @@ def estimate_delay(
 		peak_value=peak_value,
 		peak_to_sidelobe_ratio=ratio,
 	)
+
+def estimate_delay_candidates(
+	signal_a: ArrayLike,
+	signal_b: ArrayLike,
+	sample_rate: float,
+	*,
+	max_delay_s: float,
+	interpolation: int = 16,
+	time_window_s: tuple[float, float] | None = None,
+	phat_beta: float = 0.7,
+	frequency_band_hz: tuple[float, float] | None = None,
+	candidate_count: int = 5,
+) -> tuple[DelayEstimate, ...]:
+	"""Return several strong local GCC-PHAT peaks within a physical lag bound.
+
+	Unlike :func:`estimate_delay`, this does not assume the global maximum is
+	the direct arrival. Candidate peak values and peak-to-sidelobe ratios are
+	diagnostics, not calibrated probabilities.
+	"""
+	if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 1:
+		raise ValueError("candidate_count must be a positive integer")
+	a = _as_signal(signal_a, "signal_a")
+	b = _as_signal(signal_b, "signal_b")
+	if not np.isfinite(sample_rate) or sample_rate <= 0:
+		raise ValueError("sample_rate must be a positive finite number")
+	if not np.isfinite(max_delay_s) or max_delay_s < 0:
+		raise ValueError("max_delay_s must be a non-negative finite number")
+	if isinstance(interpolation, bool) or not isinstance(interpolation, int) or interpolation < 1:
+		raise ValueError("interpolation must be a positive integer")
+	if not np.isfinite(phat_beta) or not 0 < phat_beta <= 1:
+		raise ValueError("phat_beta must be in the interval (0, 1]")
+	if time_window_s is not None:
+		start_s, end_s = time_window_s
+		if not np.isfinite(start_s) or not np.isfinite(end_s) or start_s < 0 or end_s <= start_s:
+			raise ValueError("time_window_s must satisfy 0 <= start < end")
+		start = int(round(start_s * sample_rate))
+		end = int(round(end_s * sample_rate))
+		if end - start < 2 or end > min(a.size, b.size):
+			raise ValueError("time_window_s must contain at least two samples within both signals")
+		a, b = a[start:end], b[start:end]
+	if frequency_band_hz is not None:
+		low_hz, high_hz = frequency_band_hz
+		if not 0 < low_hz < high_hz < sample_rate / 2:
+			raise ValueError("frequency_band_hz must satisfy 0 < low < high < Nyquist")
+		sos = butter(4, frequency_band_hz, btype="bandpass", fs=sample_rate, output="sos")
+		try:
+			a, b = sosfiltfilt(sos, a), sosfiltfilt(sos, b)
+		except ValueError as error:
+			raise ValueError("signals are too short for the requested band-pass filter") from error
+	a, b = a - np.mean(a), b - np.mean(b)
+	if not np.any(a) or not np.any(b):
+		raise ValueError("signals must contain non-constant audio")
+	fft_length = 1 << (a.size + b.size - 1).bit_length()
+	cross = np.fft.rfft(b, n=fft_length) * np.conj(np.fft.rfft(a, n=fft_length))
+	magnitude = np.abs(cross)
+	valid = magnitude > np.finfo(float).eps * magnitude.max()
+	if not np.any(valid):
+		raise ValueError("signals do not contain enough information to correlate")
+	weight = np.power(magnitude, phat_beta)
+	cross = np.divide(cross, weight, out=np.zeros_like(cross), where=valid & (weight > 0))
+	corr = np.fft.irfft(cross, n=fft_length * interpolation)
+	max_lag = min(min(a.size, b.size) - 1, int(np.ceil(max_delay_s * sample_rate)))
+	shift = max_lag * interpolation
+	searched = corr[:1] if shift == 0 else np.concatenate((corr[-shift:], corr[:shift + 1]))
+	lags = np.arange(-shift, shift + 1, dtype=np.int64) if shift else np.array([0], dtype=np.int64)
+	absolute = np.abs(searched)
+	peak_indices, _ = find_peaks(absolute)
+	peak_indices = np.unique(np.concatenate((peak_indices, np.array([0, absolute.size - 1]))))
+	peak_indices = sorted(peak_indices, key=lambda idx: float(absolute[idx]), reverse=True)
+	selected: list[int] = []
+	minimum_separation = 2 * interpolation
+	for index in peak_indices:
+		if all(abs(int(lags[index]) - int(lags[other])) >= minimum_separation for other in selected):
+			selected.append(int(index))
+		if len(selected) >= candidate_count:
+			break
+	result: list[DelayEstimate] = []
+	for index in selected:
+		lag = int(lags[index])
+		peak = float(absolute[index])
+		outside = np.abs(lags - lag) > interpolation
+		baseline = float(np.median(absolute[outside])) if np.any(outside) else 0.0
+		ratio = peak / max(baseline, np.finfo(float).eps)
+		result.append(DelayEstimate(lag / (interpolation * sample_rate), peak, ratio))
+	return tuple(result)
 
 
 def _as_signal(signal: ArrayLike, name: str) -> np.ndarray:
