@@ -1,8 +1,4 @@
-from Algorithm.solver import estimate_tdoa
-
-def main():
-    print("Backend is working!")
-
+from server import app
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=8080, debug=True, threaded=False, use_reloader=False)
