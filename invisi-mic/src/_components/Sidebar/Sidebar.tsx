@@ -5,8 +5,8 @@ import styles from "./Sidebar.module.css"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { ACCEPTED_AUDIO, AUDIO_TRACKS, findTrack, isSupportedAudio, type AudioTrack } from "@/data/audioTracks"
-import { focusSpeaker, removeItem, setFocus, setRoom, setSyncFocus, setTrack, updateItem } from "@/store/slices/sceneSlice"
-import { setUnlocking } from "@/store/slices/toolSlice"
+import { focusSpeaker, removeItem, setFocus, setMaterial, setRoom, setSyncFocus, setTrack, setUploads, updateItem } from "@/store/slices/sceneSlice"
+import { setShowBeams, setUnlocking } from "@/store/slices/toolSlice"
 
 const icon = {
   width: 15,
@@ -109,22 +109,56 @@ function Metric({ label, value, unit, valueClass, percent }: MetricProps) {
 
 export default function Sidebar() {
   const [roomOpen, setRoomOpen] = useState(true)
-  const [absorption, setAbsorption] = useState("drywall")
+  const dispatch = useAppDispatch()
+  const uploads = useAppSelector((state) => state.scene.uploads)
+  const [materials, setMaterials] = useState<string[]>([])
+  const [absorptionByMaterial, setAbsorptionByMaterial] = useState<Record<string, number>>({})
+  const [materialsError, setMaterialsError] = useState(false)
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
   const [telemetryInfoOpen, setTelemetryInfoOpen] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [previewError, setPreviewError] = useState(false)
-  const [uploads, setUploads] = useState<AudioTrack[]>([])
   const [uploadError, setUploadError] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordError, setRecordError] = useState("")
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previewAudio = useRef<HTMLAudioElement | null>(null)
   const uploadsRef = useRef<AudioTrack[]>([])
   const fileInput = useRef<HTMLInputElement | null>(null)
+  const recorder = useRef<MediaRecorder | null>(null)
+  const recordingStream = useRef<MediaStream | null>(null)
+  const recordingChunks = useRef<Blob[]>([])
+
+  useEffect(() => {
+    let active = true
+    fetch("/api/materials", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Materials request failed")
+        const body: { materials?: unknown; absorption?: unknown } = await response.json()
+        if (!Array.isArray(body.materials) || !body.materials.every((item) => typeof item === "string")) {
+          throw new Error("Invalid materials response")
+        }
+        const names: string[] = body.materials
+        if (active) {
+          setMaterials(names)
+          if (body.absorption && typeof body.absorption === "object") {
+            setAbsorptionByMaterial(body.absorption as Record<string, number>)
+          }
+          if (names[0]) dispatch(setMaterial(names[0]))
+        }
+      })
+      .catch(() => {
+        if (active) setMaterialsError(true)
+      })
+    return () => { active = false }
+  }, [dispatch])
 
   useEffect(() => () => {
     if (lockTimer.current) clearTimeout(lockTimer.current)
     previewAudio.current?.pause()
+    recorder.current?.stream.getTracks().forEach((track) => track.stop())
+    recordingStream.current?.getTracks().forEach((track) => track.stop())
     uploadsRef.current.forEach((track) => URL.revokeObjectURL(track.src))
   }, [])
 
@@ -158,8 +192,54 @@ export default function Sidebar() {
     })
   }
 
-  const dispatch = useAppDispatch()
+  const startRecording = async (speakerId: string) => {
+    setRecordError("")
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setRecordError("Audio recording is not supported in this browser")
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recordingStream.current = stream
+      recordingChunks.current = []
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
+        .find((type) => MediaRecorder.isTypeSupported(type))
+      const activeRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      recorder.current = activeRecorder
+      activeRecorder.ondataavailable = (event) => {
+        if (event.data.size) recordingChunks.current.push(event.data)
+      }
+      activeRecorder.onerror = () => setRecordError("Recording failed. Please try again.")
+      activeRecorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop())
+        recordingStream.current = null
+        setRecording(false)
+        const blob = new Blob(recordingChunks.current, { type: activeRecorder.mimeType || "audio/webm" })
+        recordingChunks.current = []
+        if (!blob.size) {
+          setRecordError("No audio was captured. Try recording again.")
+          return
+        }
+        const track: AudioTrack = {
+          id: `recording-${Date.now()}`,
+          name: `Recording ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+          src: URL.createObjectURL(blob),
+        }
+        uploadsRef.current = [...uploadsRef.current, track]
+        dispatch(setUploads(uploadsRef.current))
+        dispatch(setTrack({ id: speakerId, trackId: track.id }))
+      }
+      activeRecorder.start()
+      setRecording(true)
+    } catch {
+      recordingStream.current?.getTracks().forEach((track) => track.stop())
+      recordingStream.current = null
+      setRecordError("Microphone access was denied or unavailable")
+    }
+  }
+
   const room = useAppSelector((state) => state.scene.room)
+  const material = useAppSelector((state) => state.scene.material)
   const selected = useAppSelector((state) => state.scene.selected)
   const node = useAppSelector((state) => {
     const { selected: ref, speakers, micArrays } = state.scene
@@ -170,17 +250,25 @@ export default function Sidebar() {
   const speakers = useAppSelector((state) => state.scene.speakers)
   const micArrays = useAppSelector((state) => state.scene.micArrays)
   const syncFocus = useAppSelector((state) => state.scene.syncFocus)
+  const showBeams = useAppSelector((state) => state.tool.showBeams)
 
-  const volume = toDisplay(1, unit) ** 3 * room.width * room.length * room.height
-  const roomVolume = room.width * room.length * room.height
-  const roomSurface = 2 * (room.width * room.length + room.width * room.height + room.length * room.height)
-  const absorptionCoefficient: Record<string, number> = {
-    drywall: 0.08,
-    concrete: 0.03,
-    glass: 0.02,
-    acoustic: 0.65,
-  }
-  const averageAbsorption = absorptionCoefficient[absorption] ?? absorptionCoefficient.drywall
+  const outline = room.outline
+  const footprintArea = outline?.length
+    ? Math.abs(outline.reduce((area, point, index) => {
+      const next = outline[(index + 1) % outline.length]
+      return area + point.x * next.y - next.x * point.y
+    }, 0)) / 2
+    : room.width * room.length
+  const footprintPerimeter = outline?.length
+    ? outline.reduce((perimeter, point, index) => {
+      const next = outline[(index + 1) % outline.length]
+      return perimeter + Math.hypot(next.x - point.x, next.y - point.y)
+    }, 0)
+    : 2 * (room.width + room.length)
+  const roomVolume = footprintArea * room.height
+  const roomSurface = 2 * footprintArea + footprintPerimeter * room.height
+  const volume = toDisplay(1, unit) ** 3 * roomVolume
+  const averageAbsorption = absorptionByMaterial[material] ?? 0.08
   const rt60 = 0.161 * roomVolume / Math.max(roomSurface * averageAbsorption, 0.01)
   const focusedDistances = micArrays
     .map((mic) => {
@@ -256,18 +344,34 @@ export default function Sidebar() {
               meters={room.height}
               onChange={(height) => dispatch(setRoom({ height }))}
             />
+            <div className={styles.lockRow}>
+              <span className={styles.lockText}>Mic direction cones</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showBeams}
+                aria-label="Show mic direction cones"
+                className={`${styles.switch} ${showBeams ? styles.switchOn : ""}`}
+                onClick={() => dispatch(setShowBeams(!showBeams))}
+              />
+            </div>
             <div>
               <span className={styles.label}>Wall acoustic absorption</span>
               <div className={styles.selectWrap}>
                 <select
                   className={styles.select}
-                  value={absorption}
-                  onChange={(e) => setAbsorption(e.target.value)}
+                  value={material}
+                  onChange={(e) => dispatch(setMaterial(e.target.value))}
+                  disabled={!materials.length}
                 >
-                  <option value="drywall">Standard Drywall</option>
-                  <option value="concrete">Concrete</option>
-                  <option value="glass">Glass</option>
-                  <option value="acoustic">Acoustic Panels</option>
+                  {!materials.length && (
+                    <option value="">{materialsError ? "Materials unavailable" : "Loading materials…"}</option>
+                  )}
+                  {materials.map((material) => (
+                    <option key={material} value={material}>
+                      {material.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                    </option>
+                  ))}
                 </select>
                 <svg {...icon} className={styles.selectChevron}>
                   <path d="m6 9 6 6 6-6" />
@@ -384,6 +488,20 @@ export default function Sidebar() {
                     </button>
                     <button
                       type="button"
+                      className={`${styles.previewBtn} ${recording ? styles.recordingBtn : ""}`}
+                      aria-label={recording ? "Stop recording" : "Record audio"}
+                      title={recording ? "Stop recording" : "Record audio"}
+                      onClick={() => {
+                        if (recording) recorder.current?.stop()
+                        else void startRecording(selected.id)
+                      }}
+                    >
+                      <svg {...icon} fill={recording ? "currentColor" : "none"}>
+                        {recording ? <rect x="7" y="7" width="10" height="10" rx="1" /> : <circle cx="12" cy="12" r="7" />}
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
                       className={styles.previewBtn}
                       aria-label="Upload MP3 or WAV file"
                       onClick={() => fileInput.current?.click()}
@@ -411,13 +529,15 @@ export default function Sidebar() {
                           src: URL.createObjectURL(file),
                         }
                         uploadsRef.current = [...uploadsRef.current, track]
-                        setUploads(uploadsRef.current)
+                        dispatch(setUploads(uploadsRef.current))
                         dispatch(setTrack({ id: selected.id, trackId: track.id }))
                       }}
                     />
                   </div>
                   {previewError && <div className={styles.nodeKind}>Unable to play track</div>}
                   {uploadError && <div className={styles.nodeKind}>Only MP3 or WAV files are supported</div>}
+                  {recordError && <div className={styles.nodeKind} role="status">{recordError}</div>}
+                  {recording && <div className={styles.nodeKind} role="status">Recording… select stop to use this audio</div>}
                 </div>
 
                 <div className={styles.lockRow}>
@@ -536,7 +656,6 @@ export default function Sidebar() {
               <strong>What these estimates mean</strong>
               <p><b>Estimated SNR:</b> the target voice level compared with background noise. Higher is clearer.</p>
               <p><b>Beam focus score:</b> how strongly the mic array is focused on the target speaker.</p>
-              <p><b>Reverb RT60:</b> estimated time for room sound to decay by 60 dB. Lower is less reverberant.</p>
               <p><b>Target tracking:</b> indicates whether speaker tracking estimates are updating.</p>
             </div>
           )}
@@ -554,7 +673,6 @@ export default function Sidebar() {
             valueClass={styles.cyan}
             percent={focusScore ?? undefined}
           />
-          <Metric label="Reverb RT60" value={rt60.toFixed(2)} unit="s" />
           <div className={styles.statusLine}>
             <span className={styles.dot} />
             {averageDistance === null ? "No speaker target · estimates limited" : "Room and target estimates updating"}

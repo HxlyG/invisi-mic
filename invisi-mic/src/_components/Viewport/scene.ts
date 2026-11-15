@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { ItemKind, ItemRef, Room, SceneItem, Vec3 } from "@/store/slices/sceneSlice";
 import { focusSpeaker } from "@/store/slices/sceneSlice";
-import type { ViewMode } from "@/store/slices/dimensionSlice";
+import type { Unit, ViewMode } from "@/store/slices/dimensionSlice";
 
 // Hex values mirror the design tokens in styles/globals.css.
 const COLORS = {
@@ -52,14 +52,145 @@ function stem(position: THREE.Vector3, color: number) {
   return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 }));
 }
 
+const roomOutline = (room: Room) => room.outline?.length
+  ? room.outline
+  : [{ x: 0, y: 0 }, { x: room.width, y: 0 }, { x: room.width, y: room.length }, { x: 0, y: room.length }];
+
+function clipFootprint(outline: { x: number; y: number }[], startY: number, endY: number) {
+  const clip = (points: { x: number; y: number }[], boundary: number, keepAbove: boolean) => {
+    const result: { x: number; y: number }[] = [];
+    for (let index = 0; index < points.length; index++) {
+      const current = points[index];
+      const previous = points[(index + points.length - 1) % points.length];
+      const currentInside = keepAbove ? current.y >= boundary : current.y <= boundary;
+      const previousInside = keepAbove ? previous.y >= boundary : previous.y <= boundary;
+      if (currentInside !== previousInside) {
+        const ratio = (boundary - previous.y) / (current.y - previous.y);
+        result.push({ x: previous.x + ratio * (current.x - previous.x), y: boundary });
+      }
+      if (currentInside) result.push(current);
+    }
+    return result;
+  };
+  return clip(clip(outline, startY, true), endY, false);
+}
+
+function footprintMesh(outline: { x: number; y: number }[], elevation: number, color: number) {
+  if (outline.length < 3) return null;
+  const shape = new THREE.Shape();
+  shape.moveTo(outline[0].x, -outline[0].y);
+  outline.slice(1).forEach((point) => shape.lineTo(point.x, -point.y));
+  shape.closePath();
+  const mesh = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shape, { depth: elevation, bevelEnabled: false }).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
+  );
+  return mesh;
+}
+
 function gridLines(room: Room) {
+  const outline = roomOutline(room);
   const points: number[] = [];
-  for (let x = 0; x <= room.width; x++) points.push(x, 0.001, 0, x, 0.001, room.length);
-  for (let z = 0; z <= room.length; z++) points.push(0, 0.001, z, room.width, 0.001, z);
+  const intersections = (axis: "x" | "y", value: number) => {
+    const other = axis === "x" ? "y" : "x";
+    const values: number[] = [];
+    outline.forEach((start, index) => {
+      const end = outline[(index + 1) % outline.length];
+      if ((start[axis] <= value && end[axis] > value) || (end[axis] <= value && start[axis] > value)) {
+        values.push(start[other] + (value - start[axis]) * (end[other] - start[other]) / (end[axis] - start[axis]));
+      }
+    });
+    return values.sort((a, b) => a - b);
+  };
+  for (let x = 0; x <= room.width; x++) {
+    const crossings = intersections("x", x);
+    for (let i = 0; i + 1 < crossings.length; i += 2) points.push(x, 0.001, crossings[i], x, 0.001, crossings[i + 1]);
+  }
+  for (let y = 0; y <= room.length; y++) {
+    const crossings = intersections("y", y);
+    for (let i = 0; i + 1 < crossings.length; i += 2) points.push(crossings[i], 0.001, y, crossings[i + 1], 0.001, y);
+  }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
   return new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: COLORS.grid }));
+}
+
+function dimensionLabel(text: string, position: THREE.Vector3, worldWidth: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 96;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "#94a3b8";
+  context.font = "600 42px sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
+  sprite.position.copy(position);
+  sprite.scale.set(worldWidth, worldWidth * canvas.height / canvas.width, 1);
+  sprite.renderOrder = 20;
+  return sprite;
+}
+
+function dimensionLine(scene: THREE.Scene, from: THREE.Vector3, to: THREE.Vector3, extensions: [THREE.Vector3, THREE.Vector3], label: string, labelWidth: number, rotateLabel = false) {
+  const tick = 0.12;
+  const tickDirection = Math.abs(to.y - from.y) > Math.abs(to.x - from.x) + Math.abs(to.z - from.z)
+    ? new THREE.Vector3(tick, 0, 0)
+    : new THREE.Vector3(0, tick, 0);
+  const points = [
+    from, to,
+    extensions[0], from,
+    extensions[1], to,
+    from.clone().sub(tickDirection), from.clone().add(tickDirection),
+    to.clone().sub(tickDirection), to.clone().add(tickDirection),
+  ];
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  scene.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: 0x64748b })));
+  const midpoint = from.clone().add(to).multiplyScalar(0.5);
+  const sprite = dimensionLabel(label, midpoint, labelWidth);
+  if (sprite) {
+    if (rotateLabel) sprite.material.rotation = Math.PI / 2;
+    scene.add(sprite);
+  }
+}
+
+function addRoomDimensions(scene: THREE.Scene, room: Room, unit: Unit, view: ViewMode) {
+  const convert = (value: number) => unit === "ft" ? value * 3.28084 : value;
+  const suffix = unit;
+  const value = (amount: number) => `${Math.round(convert(amount) * 100) / 100} ${suffix}`;
+  const offset = Math.max(0.45, Math.min(room.width, room.length, room.height) * 0.12);
+  const labelWidth = Math.max(1.7, Math.min(room.width, room.length) * 0.24);
+
+  dimensionLine(
+    scene,
+    new THREE.Vector3(0, -offset, room.length + offset),
+    new THREE.Vector3(room.width, -offset, room.length + offset),
+    [new THREE.Vector3(0, 0, room.length), new THREE.Vector3(room.width, 0, room.length)],
+    value(room.width),
+    labelWidth,
+  );
+  dimensionLine(
+    scene,
+    new THREE.Vector3(room.width + offset, -offset, 0),
+    new THREE.Vector3(room.width + offset, -offset, room.length),
+    [new THREE.Vector3(room.width, 0, 0), new THREE.Vector3(room.width, 0, room.length)],
+    value(room.length),
+    labelWidth,
+    true,
+  );
+  if (view === "2d") return;
+  dimensionLine(
+    scene,
+    new THREE.Vector3(-offset, 0, room.length),
+    new THREE.Vector3(-offset, room.height, room.length),
+    [new THREE.Vector3(0, 0, room.length), new THREE.Vector3(0, room.height, room.length)],
+    value(room.height),
+    labelWidth,
+  );
 }
 
 export function buildScene(
@@ -68,25 +199,59 @@ export function buildScene(
   micArrays: SceneItem[],
   selected: ItemRef | null,
   view: ViewMode,
+  unit: Unit,
+  showBeams = true,
 ) {
   // Top-down hides height, so higher objects are drawn larger to suggest it.
   const heightScale = (z: number) => (view === "2d" ? 1 + 0.8 * (z / Math.max(room.height, 0.01)) : 1);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(COLORS.canvas);
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(room.width, room.length).rotateX(-Math.PI / 2).translate(room.width / 2, 0, room.length / 2),
-    new THREE.MeshBasicMaterial({ color: COLORS.floor }),
-  );
+  const outline = roomOutline(room);
+  const floorShape = new THREE.Shape();
+  floorShape.moveTo(outline[0].x, -outline[0].y);
+  outline.slice(1).forEach((point) => floorShape.lineTo(point.x, -point.y));
+  floorShape.closePath();
+  const floor = new THREE.Mesh(new THREE.ShapeGeometry(floorShape).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COLORS.floor }));
   scene.add(floor, gridLines(room));
 
-  const box = new THREE.BoxGeometry(room.width, room.height, room.length).translate(
-    room.width / 2,
-    room.height / 2,
-    room.length / 2,
-  );
-  scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(box), new THREE.LineBasicMaterial({ color: COLORS.wall })));
-  box.dispose();
+  for (const [index, tier] of (room.tiers ?? []).entries()) {
+    const tierOutline = clipFootprint(outline, tier.startY, tier.endY);
+    const tierMesh = footprintMesh(tierOutline, tier.elevation, index % 2 ? 0x1b222d : 0x202834);
+    if (tierMesh) scene.add(tierMesh);
+  }
+
+  if (room.stage) {
+    const { x, y, width, length, elevation } = room.stage;
+    const stage = new THREE.BoxGeometry(width, elevation, length).translate(x + width / 2, elevation / 2, y + length / 2);
+    scene.add(
+      new THREE.Mesh(stage, new THREE.MeshBasicMaterial({ color: 0x33231f })),
+      new THREE.LineSegments(new THREE.EdgesGeometry(stage), new THREE.LineBasicMaterial({ color: COLORS.harmonic })),
+    );
+  }
+
+  for (const pillar of room.pillars ?? []) {
+    const geometry = new THREE.CylinderGeometry(pillar.radius, pillar.radius, pillar.height, 24);
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x3a414c }));
+    mesh.position.set(pillar.x, pillar.height / 2, pillar.y);
+    scene.add(mesh);
+    const outlineGeometry = new THREE.EdgesGeometry(geometry);
+    const outlineMesh = new THREE.LineSegments(outlineGeometry, new THREE.LineBasicMaterial({ color: COLORS.wall }));
+    outlineMesh.position.copy(mesh.position);
+    scene.add(outlineMesh);
+  }
+
+  const wallPoints: THREE.Vector3[] = [];
+  outline.forEach((point, index) => {
+    const next = outline[(index + 1) % outline.length];
+    wallPoints.push(
+      new THREE.Vector3(point.x, 0, point.y), new THREE.Vector3(next.x, 0, next.y),
+      new THREE.Vector3(point.x, room.height, point.y), new THREE.Vector3(next.x, room.height, next.y),
+      new THREE.Vector3(point.x, 0, point.y), new THREE.Vector3(point.x, room.height, point.y),
+    );
+  });
+  scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(wallPoints), new THREE.LineBasicMaterial({ color: COLORS.wall })));
+  addRoomDimensions(scene, room, unit, view);
 
   const isSelected = (kind: ItemKind, id: string) => selected?.kind === kind && selected.id === id;
 
@@ -133,6 +298,7 @@ export function buildScene(
     if (isSelected("micArray", micArray.id)) scene.add(highlight(pos));
 
     // Each array aims at its chosen focus speaker, if any.
+    if (!showBeams) continue;
     const target = focusSpeaker(micArray, speakers);
     if (!target) continue;
     const nearest = toWorld(target.position);

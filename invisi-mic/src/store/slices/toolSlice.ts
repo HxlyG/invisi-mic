@@ -6,12 +6,14 @@ interface ToolState {
   activeTool: Tool;
   gridSnap: boolean;
   unlocking: boolean;
+  showBeams: boolean;
 }
 
 const initialState: ToolState = {
   activeTool: "select",
   gridSnap: false,
   unlocking: false,
+  showBeams: true,
 }
 
 export const toolSlice = createSlice({
@@ -27,8 +29,11 @@ export const toolSlice = createSlice({
     setUnlocking: (state, action: PayloadAction<boolean>) => {
       state.unlocking = action.payload;
     },
+    setShowBeams: (state, action: PayloadAction<boolean>) => {
+      state.showBeams = action.payload;
+    },
   }
 })
 
-export const { setTool, setGridSnap, setUnlocking } = toolSlice.actions;
+export const { setTool, setGridSnap, setUnlocking, setShowBeams } = toolSlice.actions;
 export default toolSlice.reducer;

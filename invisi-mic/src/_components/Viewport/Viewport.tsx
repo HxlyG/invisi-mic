@@ -7,12 +7,23 @@ import { addItem, DEFAULT_HEIGHT, focusSpeaker, selectItem, updateItem, type Ite
 import { setTool } from "@/store/slices/toolSlice"
 import { buildScene, createCamera, DEFAULT_CAMERA, disposeScene, fitCamera, itemName, MAX_ELEVATION, parseItemName, type CameraState } from "./scene"
 import ViewCube from "./ViewCube"
+import ListenBar from "./ListenBar"
 import styles from "./Viewport.module.css"
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 const snapToDimension = (value: number, dimension: number) => {
   const step = dimension < 2 ? 0.1 : dimension < 5 ? 0.25 : dimension < 10 ? 0.5 : 1
   return Math.round(value / step) * step
+}
+const insideRoom = (x: number, y: number, outline?: { x: number; y: number }[]) => {
+  if (!outline?.length) return true
+  let inside = false
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const a = outline[i]
+    const b = outline[j]
+    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
 }
 
 interface Latest {
@@ -37,6 +48,7 @@ export default function Viewport() {
   const tool = useAppSelector((state) => state.tool.activeTool)
   const gridSnap = useAppSelector((state) => state.tool.gridSnap)
   const unlocking = useAppSelector((state) => state.tool.unlocking)
+  const showBeams = useAppSelector((state) => state.tool.showBeams)
   const [active, setActive] = useState<ItemRef | null>(null)
   const [orient, setOrient] = useState({ azimuth: DEFAULT_CAMERA.azimuth, elevation: DEFAULT_CAMERA.elevation })
   const cam = useRef<CameraState>({ ...DEFAULT_CAMERA })
@@ -108,10 +120,13 @@ export default function Viewport() {
       const { room: bounds } = viewState.current
       const snap = (value: number, dimension: number) =>
         viewState.current.gridSnap ? snapToDimension(value, dimension) : value
+      const x = clamp(snap(point.x, bounds.width), 0, bounds.width)
+      const y = clamp(snap(point.z, bounds.length), 0, bounds.length)
+      if (!insideRoom(x, y, bounds.outline)) return
       dispatch(addItem({
         kind,
-        x: clamp(snap(point.x, bounds.width), 0, bounds.width),
-        y: clamp(snap(point.z, bounds.length), 0, bounds.length),
+        x,
+        y,
       }))
     }
 
@@ -227,6 +242,7 @@ export default function Viewport() {
         x: clamp(snap(point.x, bounds.width), 0, bounds.width),
         y: clamp(snap(point.z, bounds.length), 0, bounds.length),
       }
+      if (!insideRoom(position.x, position.y, bounds.outline)) return
       dispatch(updateItem({ ...dragging, patch: position }))
     }
 
@@ -291,9 +307,9 @@ export default function Viewport() {
       ...micArrays.map((m) => [itemName("micArray", m.id), m.position.z]),
     ])
     if (state.scene) disposeScene(state.scene)
-    state.scene = buildScene(room, speakers, micArrays, selected, view)
+    state.scene = buildScene(room, speakers, micArrays, selected, view, unit, showBeams)
     state.render()
-  }, [view, room, tool, gridSnap, speakers, micArrays, selected])
+  }, [view, room, tool, gridSnap, speakers, micArrays, selected, unit, showBeams])
 
   useEffect(() => {
     if (!unlocking) return
@@ -341,6 +357,7 @@ export default function Viewport() {
         />
       )}
       <span className={styles.label}>{hint}</span>
+      <ListenBar />
       {active && current && (
         <span className={`${styles.label} ${styles.readout}`}>
           {current.name} height{" "}

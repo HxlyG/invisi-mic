@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { AudioTrack } from "@/data/audioTracks";
 
 // All lengths are meters. x = across the room, y = depth, z = height above the floor.
 export interface Vec3 {
@@ -11,10 +12,20 @@ export interface Room {
   width: number;
   length: number;
   height: number;
+  outline?: { x: number; y: number }[];
+  tiers?: { startY: number; endY: number; elevation: number }[];
+  stage?: { x: number; y: number; width: number; length: number; elevation: number };
+  pillars?: { x: number; y: number; radius: number; height: number }[];
 }
 
 interface SceneState {
   room: Room;
+  // Backend wall material key; empty until the materials list loads.
+  material: string;
+  // User-uploaded tracks; src is a blob URL.
+  uploads: AudioTrack[];
+  // Simulated audio blob URLs, one per mic array in run order.
+  simAudio: string[];
   speakers: SceneItem[];
   micArrays: SceneItem[];
   selected: ItemRef | null;
@@ -22,6 +33,14 @@ interface SceneState {
   syncFocus: boolean;
   // Running totals used to generate unique ids and names without randomness.
   counters: Record<ItemKind, number>;
+}
+
+export interface ImportedScene {
+  room: Room;
+  material: string;
+  speakers: SceneItem[];
+  micArrays: SceneItem[];
+  syncFocus: boolean;
 }
 
 export type ItemKind = "speaker" | "micArray";
@@ -62,6 +81,9 @@ export const DEFAULT_HEIGHT: Record<ItemKind, number> = {
 
 const initialState: SceneState = {
   room: { width: 14, length: 10, height: 4.5 },
+  material: "",
+  uploads: [],
+  simAudio: [],
   speakers: [{ id: "speaker-1", name: "Speaker 01", position: { x: 7, y: 1.5, z: DEFAULT_HEIGHT.speaker } }],
   micArrays: [{ id: "mic-1", name: "Mic array 01", position: { x: 7, y: 8.5, z: DEFAULT_HEIGHT.micArray }, focusId: "speaker-1" }],
   selected: { kind: "speaker", id: "speaker-1" },
@@ -77,7 +99,41 @@ export const sceneSlice = createSlice({
   initialState,
   reducers: {
     setRoom: (state, action: PayloadAction<Partial<Room>>) => {
-      state.room = { ...state.room, ...action.payload };
+      const previous = state.room;
+      const next = { ...previous, ...action.payload };
+      if (previous.outline && (action.payload.width !== undefined || action.payload.length !== undefined)) {
+        const scaleX = next.width / previous.width;
+        const scaleY = next.length / previous.length;
+        next.outline = previous.outline.map((point) => ({ x: point.x * scaleX, y: point.y * scaleY }));
+      }
+      state.room = next;
+    },
+    setMaterial: (state, action: PayloadAction<string>) => {
+      state.material = action.payload;
+    },
+    setUploads: (state, action: PayloadAction<AudioTrack[]>) => {
+      state.uploads = action.payload;
+    },
+    setSimAudio: (state, action: PayloadAction<string[]>) => {
+      state.simAudio = action.payload;
+    },
+    loadSimulation: (state, action: PayloadAction<ImportedScene>) => {
+      const { room, material, speakers, micArrays, syncFocus } = action.payload;
+      state.room = room;
+      state.material = material;
+      state.speakers = speakers;
+      state.micArrays = micArrays;
+      state.syncFocus = syncFocus;
+      state.selected = null;
+      state.simAudio = [];
+      const nextCounter = (items: SceneItem[], prefix: string) => items.reduce((max, item) => {
+        const match = item.id.match(new RegExp(`^${prefix}-(\\d+)$`));
+        return match ? Math.max(max, Number(match[1])) : max;
+      }, 0);
+      state.counters = {
+        speaker: nextCounter(speakers, "speaker"),
+        micArray: nextCounter(micArrays, "mic"),
+      };
     },
     addItem: (state, action: PayloadAction<{ kind: ItemKind; x: number; y: number }>) => {
       const { kind, x, y } = action.payload;
@@ -130,5 +186,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, setMaterial, setUploads, setSimAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;

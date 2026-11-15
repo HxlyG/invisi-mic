@@ -252,6 +252,17 @@
   opacity: 0.5;
 }
 
+.recordingBtn {
+  color: var(--color-signal-red);
+  border-color: var(--color-signal-red);
+  animation: recordingPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes recordingPulse {
+  from { background: var(--color-studio-950); }
+  to { background: rgba(239, 68, 68, 0.18); }
+}
+
 .meta {
   display: flex;
   justify-content: space-between;
