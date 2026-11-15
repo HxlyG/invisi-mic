@@ -1,5 +1,6 @@
 import math
 import threading
+from typing import cast
 
 from sim.sim import get_material_absorption, get_materials, mic_focus_targets, shoebox_simulation
 
@@ -11,6 +12,47 @@ sim_lock = threading.Lock()
 
 # Base64 characters; roughly 3 MB of WAV per talker.
 MAX_AUDIO_CHARS = 4_000_000
+
+
+def _validate_config(config):
+    is_2_dimensional = config.get("is_2_dimensional", False)
+    shoebox = config.get("shoebox")
+    mics = config.get("mics")
+    talkers = config.get("talkers")
+    expected_dimensions = 2 if is_2_dimensional else 3
+
+    if not isinstance(is_2_dimensional, bool):
+        return "is_2_dimensional must be a boolean"
+    if not isinstance(shoebox, list) or len(shoebox) != expected_dimensions or not all(
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        and math.isfinite(value) and value > 0
+        for value in shoebox
+    ):
+        return f"shoebox must contain {expected_dimensions} positive dimensions"
+
+    def valid_positions(positions):
+        return (
+            isinstance(positions, list)
+            and bool(positions)
+            and all(
+                isinstance(position, list)
+                and len(position) == expected_dimensions
+                and all(
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    for value in position
+                )
+                for position in positions
+            )
+        )
+
+    if not valid_positions(mics):
+        return f"mics must contain one or more {expected_dimensions}-dimensional positions"
+    if not valid_positions(talkers):
+        return f"talkers must contain one or more {expected_dimensions}-dimensional positions"
+    return None
+
 
 @app.get("/")
 def index():
@@ -30,10 +72,10 @@ def data():
     if error:
         return jsonify({"error": error}), 400
 
-    if not shoebox or not mics or not talkers:
-        return jsonify({"error": "shoebox, mics, and talkers are required"}), 400
-    if not isinstance(mics, list) or not isinstance(talkers, list):
-        return jsonify({"error": "mics and talkers must be lists"}), 400
+    is_2_dimensional = cast(bool, config.get("is_2_dimensional", False))
+    shoebox = cast(list[float], config["shoebox"])
+    mics = cast(list[list[float]], config["mics"])
+    talkers = cast(list[list[float]], config["talkers"])
 
     outline = config.get("outline")
     if outline is not None and (
@@ -60,21 +102,27 @@ def data():
     ):
         return jsonify({"error": "talker_tracks must hold one track id or null per talker"}), 400
 
-    mic_focus = config.get("mic_focus") or [None] * len(mics)
+    mic_focus = config.get("mic_focus")
+    if mic_focus is None:
+        mic_focus = [None for _ in mics]
     if (
         not isinstance(mic_focus, list)
         or len(mic_focus) != len(mics)
         or not all(f is None or (isinstance(f, int) and 0 <= f < len(talkers)) for f in mic_focus)
     ):
         return jsonify({"error": "mic_focus must hold one talker index or null per mic"}), 400
+    mic_focus = cast(list[int | None], mic_focus)
 
-    talker_audio = config.get("talker_audio") or [None] * len(talkers)
+    talker_audio = config.get("talker_audio")
+    if talker_audio is None:
+        talker_audio = [None for _ in talkers]
     if (
         not isinstance(talker_audio, list)
         or len(talker_audio) != len(talkers)
         or not all(a is None or (isinstance(a, str) and len(a) <= MAX_AUDIO_CHARS) for a in talker_audio)
     ):
         return jsonify({"error": "talker_audio must hold one base64 WAV or null per talker"}), 400
+    talker_audio = cast(list[str | None], talker_audio)
 
     with sim_lock:
         try:
