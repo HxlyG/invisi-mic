@@ -38,13 +38,13 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python3 main.py
+python3 src/main.py
 ```
 
-`main.py` serves the API on port **8080**. The frontend looks for it on port 5000 by default, so point it at the right address (next step), or start the server on port 5000 instead:
+`src/main.py` serves the API on port **8080**. The frontend looks for it on port 5000 by default, so point it at the right address (next step), or start the server on port 5000 instead:
 
 ```bash
-flask --app server run
+flask --app src/server run
 ```
 
 ### 2. Start the frontend

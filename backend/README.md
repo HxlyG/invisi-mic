@@ -1,15 +1,35 @@
-testing:
-{"is_2_dimensional": true, "shoebox": [2, 2], "mics": [[0, 1], [1, 0]], "talkers": [[0.5, 0.5], [1.5, 1.5]]}
+# BeamStage backend
 
-GET http://127.0.0.1:5000/materials
+Flask API that simulates a room with pyroomacoustics, localizes the talkers and beamforms each one out of the mic recordings. The request and response format is documented in the [root README](../README.md#backend-api).
 
-Returns {"materials": [...], "absorption": {name: mean coefficient}}.
+## Layout
 
-POST http://127.0.0.1:5000/data
-Content-Type: application/json
+| Path                    | Contents                                                                    |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `src/main.py`           | Entry point; serves the API on port 8080                                    |
+| `src/server.py`         | Flask routes (`GET /`, `GET /materials`, `POST /data`)                      |
+| `src/Simulation/`       | Room simulation (`sim.py`) and test-signal helpers (`signals.py`)           |
+| `src/Algorithm/`        | GCC-PHAT, TDOA, onset detection, position solver, calibration, beamformer   |
+| `tests/`                | Unit tests and the experiment scripts (`tests/visualization/` plots results) |
+| `scripts/`              | Manual helpers, such as `post_sim.py` which posts a small simulation        |
+| `examples/`             | Sample simulation JSON and a test ping sound                                |
+| `data/`                 | Local datasets (LibriSpeech); not committed                                 |
 
-{"is_2_dimensional":true,"shoebox":[2,2],"mics":[[0,1],[1,0]],"talkers":[[0.5,0.5],[1.5,1.5]],"material":"brickwork","talker_tracks":["lecture",null],"mic_focus":[1,null]}
+Plots from earlier experiments are kept in [`../docs/images`](../docs/images).
 
-Optional fields: outline (list of [x, y] floor points; the room becomes that polygon, extruded to shoebox[2] in 3D, and mics/talkers must be inside it), material (a name from /materials), talker_tracks (track id or null per talker), mic_focus (talker index, or null for nearest, per mic), talker_audio (base64 16 kHz mono WAV or null per talker).
+## Run
 
-Returns JSON with the submitted config, focus (target talker and distance per mic), rt60 (seconds, null without a material), and audio (base64 WAV per mic, null when no talker has audio).
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python3 src/main.py
+```
+
+The server does not auto-reload, so restart it after changing backend code.
+
+## Test
+
+```bash
+python3 -m pytest
+```
