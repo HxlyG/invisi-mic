@@ -1,0 +1,167 @@
+@import "tailwindcss/preflight";
+
+/*
+ * BeamStage Design Tokens
+ * Single source of truth for the "Dark Control Booth" color system.
+ * Tailwind colors in tailwind.config.js reference these variables,
+ * so changing a value here updates both utility classes and raw CSS.
+ */
+:root {
+  color-scheme: dark;
+
+  /* — Surface ramps — */
+  --color-obsidian: #0b0d10; /* Obsidian Void — viewport canvas bg */
+  --color-studio-950: #0b0d10;
+  --color-studio-900: #0f1218; /* room fill */
+  --color-studio-850: #151921; /* Studio Slate — HUD panels */
+  --color-studio-800: #1a1f29; /* hover surface */
+  --color-studio-700: #262c3a; /* 1px borders */
+  --color-studio-600: #353d50; /* active surface / scrollbar hover */
+
+  /* — Text — */
+  --color-chalk: #f1f5f9; /* Crisp Chalk — primary text & room vectors */
+  --color-slate-400: #94a3b8; /* secondary labels */
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+
+  /* — Grid — */
+  --color-grid-dot: #1e2430; /* architectural dot/line grid */
+
+  /* — Sonar Cyan — primary accent (mic arrays & beamforming cones) — */
+  --color-sonar-50: #ecfeff;
+  --color-sonar-300: #67e8f9;
+  --color-sonar-400: #22d3ee;
+  --color-sonar-500: #06b6d4;
+  --color-sonar-600: #0891b2;
+  --color-sonar-700: #0e7490;
+
+  /* — Harmonic Amber — secondary signal accent (speakers & voice activity) — */
+  --color-harmonic-300: #fcd34d;
+  --color-harmonic-400: #fbbf24;
+  --color-harmonic-500: #f59e0b;
+  --color-harmonic-600: #d97706;
+
+  /* — Status indicators — */
+  --color-signal-green: #10b981; /* optimal pickup / hardware connected */
+  --color-signal-red: #ef4444; /* dead zones / clipping */
+
+  /* — Typography — */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* — Shadows / glows — */
+  --shadow-sonar-glow: 0 0 12px rgba(6, 182, 212, 0.4);
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-obsidian);
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-chalk);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+}
+
+/* Tabular figures for all telemetry */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Custom scrollbar for HUD panels */
+.hud-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.hud-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-studio-700);
+  border-radius: 3px;
+}
+.hud-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-studio-600);
+}
+
+/* Range slider styling */
+input[type='range'].sonar-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-studio-700);
+  outline: none;
+}
+input[type='range'].sonar-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-sonar-500);
+  cursor: pointer;
+  border: 2px solid var(--color-obsidian);
+  box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+}
+input[type='range'].harmonic-range::-webkit-slider-thumb {
+  background: var(--color-harmonic-500);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+/* Hide number input spinners */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-ripple {
+  animation: ripple 2s ease-out infinite;
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2.4s ease-in-out infinite;
+}

@@ -16,6 +16,12 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Simulation API
+
+The frontend sends the current room dimensions, microphone positions, and speaker positions to the Flask API through a same-origin Next.js route. Start the backend separately from the `backend` directory with `python3 main.py` (it listens on port 5000 by default), then use **Run Simulation** in the app. The toolbar reports the API connection and the latest run result.
+
+To use a backend at another address, set `INVISI_MIC_API_URL` in the frontend environment (for example, `http://127.0.0.1:5000`).
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
