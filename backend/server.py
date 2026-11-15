@@ -26,10 +26,9 @@ def data():
     if not isinstance(config, dict):
         return jsonify({"error": "expected a JSON object body"}), 400
 
-    is_2_dimensional = config.get("is_2_dimensional", False)
-    shoebox = config.get("shoebox")
-    mics = config.get("mics")
-    talkers = config.get("talkers")
+    error = _validate_config(config)
+    if error:
+        return jsonify({"error": error}), 400
 
     if not shoebox or not mics or not talkers:
         return jsonify({"error": "shoebox, mics, and talkers are required"}), 400
