@@ -108,7 +108,9 @@ function Metric({ label, value, unit, valueClass, percent }: MetricProps) {
 }
 
 export default function Sidebar() {
-  const [roomOpen, setRoomOpen] = useState(true)
+  const [roomOpen, setRoomOpen] = useState(false)
+  const [nodeOpen, setNodeOpen] = useState(true)
+  const [speakerOpen, setSpeakerOpen] = useState(false)
   const dispatch = useAppDispatch()
   const uploads = useAppSelector((state) => state.scene.uploads)
   const [materials, setMaterials] = useState<string[]>([])
@@ -388,12 +390,23 @@ export default function Sidebar() {
 
       <section className={styles.section}>
         <div className={styles.header}>
-          <svg {...icon} className={styles.headerIcon}>
-            <circle cx="12" cy="12" r="9" />
-            <circle cx="12" cy="12" r="5" />
-            <circle cx="12" cy="12" r="1" />
-          </svg>
-          <span className={styles.headerTitle}>Selected node</span>
+          <button
+            type="button"
+            className={styles.sectionToggle}
+            onClick={() => setNodeOpen((open) => !open)}
+            aria-expanded={nodeOpen}
+          >
+            <svg {...icon} className={styles.headerIcon}>
+              <circle cx="12" cy="12" r="9" />
+              <circle cx="12" cy="12" r="5" />
+              <circle cx="12" cy="12" r="1" />
+            </svg>
+            <span className={styles.headerTitle}>Selected node</span>
+            {selected && <span className={styles.sectionSummary}>{node?.name}</span>}
+            <svg {...icon} className={`${styles.chevron} ${nodeOpen ? "" : styles.chevronOpen}`}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
           <button
             type="button"
             className={styles.iconBtn}
@@ -401,13 +414,11 @@ export default function Sidebar() {
             disabled={!selected}
             onClick={() => selected && dispatch(removeItem(selected))}
           >
-            <svg {...icon}>
-              <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6" />
-            </svg>
+            <svg {...icon}><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v6M14 10v6" /></svg>
           </button>
         </div>
 
-        {selected && node ? (
+        {nodeOpen && selected && node ? (
           <div className={styles.body}>
             <div className={styles.node}>
               <div
@@ -571,22 +582,30 @@ export default function Sidebar() {
               </>
             )}
           </div>
-        ) : (
+        ) : nodeOpen ? (
           <div className={styles.body}>
             <div className={styles.nodeKind}>No node selected</div>
           </div>
-        )}
+        ) : null}
       </section>
 
       <section className={styles.section}>
-        <div className={styles.header}>
+        <button
+          type="button"
+          className={styles.sectionToggle}
+          onClick={() => setSpeakerOpen((open) => !open)}
+          aria-expanded={speakerOpen}
+        >
           <svg {...icon} className={styles.headerIcon}>
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
           </svg>
           <span className={styles.headerTitle}>Human speaker</span>
-        </div>
-        <div className={styles.body}>
+          <svg {...icon} className={`${styles.chevron} ${speakerOpen ? "" : styles.chevronOpen}`}>
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </button>
+        {speakerOpen && <div className={styles.body}>
           {micArrays.length === 0 && <div className={styles.nodeKind}>No mic arrays</div>}
           <div className={styles.lockRow}>
             <span className={styles.lockText}>
@@ -626,10 +645,10 @@ export default function Sidebar() {
           ) : (
             <div className={styles.nodeKind}>Each mic targets its nearest speaker.</div>
           )}
-        </div>
+        </div>}
       </section>
 
-      <section className={styles.section}>
+      {/* <section className={styles.section}>
         <div className={styles.header}>
           <svg {...icon} className={styles.headerIcon}>
             <path d="M2 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 13c2-2 4-2 6 0s4 2 6 0 4-2 6 0M2 18c2-2 4-2 6 0s4 2 6 0 4-2 6 0" />
@@ -678,7 +697,7 @@ export default function Sidebar() {
             {averageDistance === null ? "No speaker target · estimates limited" : "Room and target estimates updating"}
           </div>
         </div>
-      </section>
+      </section> */}
 
       <div className={styles.footer}>
         <span>Simulation engine</span>

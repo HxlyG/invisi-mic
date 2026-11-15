@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { ItemKind, ItemRef, Room, SceneItem, Vec3 } from "@/store/slices/sceneSlice";
 import { focusSpeaker } from "@/store/slices/sceneSlice";
 import type { Unit, ViewMode } from "@/store/slices/dimensionSlice";
+import { DRAW_AREA, type Point } from "@/lib/roomShape";
 
 // Hex values mirror the design tokens in styles/globals.css.
 const COLORS = {
@@ -323,6 +324,90 @@ export function buildScene(
   }
 
   return scene;
+}
+
+// Fixed top-down workspace the camera frames while drawing, so corners can sit outside the current room.
+export const DRAW_ROOM: Room = { ...DRAW_AREA, height: 3 };
+
+const DRAFT_INVALID = 0xef4444;
+
+export function buildDraftScene(points: Point[], room: Room, unit: Unit) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(COLORS.canvas);
+
+  const floorShape = new THREE.Shape();
+  floorShape.moveTo(0, 0);
+  floorShape.lineTo(DRAW_ROOM.width, 0);
+  floorShape.lineTo(DRAW_ROOM.width, -DRAW_ROOM.length);
+  floorShape.lineTo(0, -DRAW_ROOM.length);
+  floorShape.closePath();
+  scene.add(
+    new THREE.Mesh(new THREE.ShapeGeometry(floorShape).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COLORS.floor })),
+    gridLines(DRAW_ROOM),
+  );
+
+  // The room being replaced, as a dim reference.
+  const previous = roomOutline(room).map((p) => new THREE.Vector3(p.x, 0.003, p.y));
+  scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(previous), new THREE.LineBasicMaterial({ color: 0x334155 })));
+
+  if (points.length > 1) {
+    const path = points.map((p) => new THREE.Vector3(p.x, 0.01, p.y));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(path), new THREE.LineBasicMaterial({ color: COLORS.sonar })));
+  }
+
+  const dot = (radius: number, color: number, p: Point, height: number) => {
+    const mesh = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color }),
+    );
+    mesh.position.set(p.x, height, p.y);
+    return mesh;
+  };
+  points.forEach((p, index) => scene.add(index === 0 ? dot(0.28, COLORS.harmonic, p, 0.02) : dot(0.18, COLORS.sonar, p, 0.02)));
+
+  const convert = (value: number) => unit === "ft" ? value * 3.28084 : value;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    // Offset the label to one side so it doesn't sit on the wall.
+    const label = dimensionLabel(
+      `${Math.round(convert(length) * 100) / 100} ${unit}`,
+      new THREE.Vector3((a.x + b.x) / 2 - ((b.y - a.y) / length) * 0.6, 0.05, (a.y + b.y) / 2 + ((b.x - a.x) / length) * 0.6),
+      1.8,
+    );
+    if (label) scene.add(label);
+  }
+
+  const rubber = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({ color: COLORS.sonar, transparent: true, opacity: 0.6 }),
+  );
+  rubber.name = "draft-rubber";
+  rubber.visible = false;
+  rubber.frustumCulled = false;
+  const cursor = dot(0.14, 0xffffff, { x: 0, y: 0 }, 0.03);
+  cursor.name = "draft-cursor";
+  cursor.visible = false;
+  scene.add(rubber, cursor);
+
+  return scene;
+}
+
+// Moves the rubber-band wall and cursor marker without rebuilding the scene.
+export function updateDraftCursor(scene: THREE.Scene, last: Point | null, hover: Point, valid: boolean) {
+  const rubber = scene.getObjectByName("draft-rubber") as THREE.Line | undefined;
+  const cursor = scene.getObjectByName("draft-cursor") as THREE.Mesh | undefined;
+  if (!rubber || !cursor) return;
+  const color = valid ? COLORS.sonar : DRAFT_INVALID;
+  cursor.visible = true;
+  cursor.position.set(hover.x, 0.03, hover.y);
+  (cursor.material as THREE.MeshBasicMaterial).color.setHex(valid ? 0xffffff : DRAFT_INVALID);
+  rubber.visible = last !== null;
+  if (last) {
+    rubber.geometry.setFromPoints([new THREE.Vector3(last.x, 0.015, last.y), new THREE.Vector3(hover.x, 0.015, hover.y)]);
+    (rubber.material as THREE.LineBasicMaterial).color.setHex(color);
+  }
 }
 
 export function disposeScene(scene: THREE.Scene) {

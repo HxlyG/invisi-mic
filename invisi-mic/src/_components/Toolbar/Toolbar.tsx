@@ -43,6 +43,11 @@ const TOOLS: { id: Tool; label: string; icon: React.ReactNode }[] = [
       </>
     ),
   },
+  {
+    id: "room",
+    label: "Draw room",
+    icon: <path d="M4 7 12 3l8 5-2 11H7z" />,
+  },
 ]
 
 export default function Toolbar() {
@@ -52,9 +57,9 @@ export default function Toolbar() {
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-orientation="vertical" aria-label="Diagram tools">
-      {TOOLS.map((tool, index) => (
+      {TOOLS.map((tool) => (
         <div key={tool.id} className={styles.item}>
-          {index === 1 && <div className={styles.divider} />}
+          {(tool.id === "mic" || tool.id === "room") && <div className={styles.divider} />}
           <button
             type="button"
             title={tool.label}

@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { AudioTrack } from "@/data/audioTracks";
+import { moveInside } from "@/lib/roomShape";
 
 // All lengths are meters. x = across the room, y = depth, z = height above the floor.
 export interface Vec3 {
@@ -108,6 +109,16 @@ export const sceneSlice = createSlice({
       }
       state.room = next;
     },
+    // Replaces the room with a drawn outline; tiers, stage and pillars no longer fit it, and items are pulled inside.
+    setRoomOutline: (state, action: PayloadAction<{ outline: { x: number; y: number }[]; width: number; length: number }>) => {
+      const { outline, width, length } = action.payload;
+      state.room = { width, length, height: state.room.height, outline };
+      state.simAudio = [];
+      for (const item of [...state.speakers, ...state.micArrays]) {
+        const { x, y } = moveInside(item.position, outline);
+        item.position = { ...item.position, x, y };
+      }
+    },
     setMaterial: (state, action: PayloadAction<string>) => {
       state.material = action.payload;
     },
@@ -186,5 +197,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, setMaterial, setUploads, setSimAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, setRoomOutline, setMaterial, setUploads, setSimAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;

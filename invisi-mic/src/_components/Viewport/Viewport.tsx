@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react"
 import * as THREE from "three"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
-import { addItem, DEFAULT_HEIGHT, focusSpeaker, selectItem, updateItem, type ItemKind, type ItemRef } from "@/store/slices/sceneSlice"
-import { setTool } from "@/store/slices/toolSlice"
-import { buildScene, createCamera, DEFAULT_CAMERA, disposeScene, fitCamera, itemName, MAX_ELEVATION, parseItemName, type CameraState } from "./scene"
+import { addItem, DEFAULT_HEIGHT, focusSpeaker, selectItem, setRoomOutline, updateItem, type ItemKind, type ItemRef, type Room } from "@/store/slices/sceneSlice"
+import { addDraftPoint, popDraftPoint, setTool, type Tool } from "@/store/slices/toolSlice"
+import type { Unit, ViewMode } from "@/store/slices/dimensionSlice"
+import { canAddPoint, canClose, DRAW_AREA, normalizeOutline, pointInPolygon, signedArea, type Point } from "@/lib/roomShape"
+import { buildDraftScene, buildScene, createCamera, DEFAULT_CAMERA, DRAW_ROOM, disposeScene, fitCamera, itemName, MAX_ELEVATION, parseItemName, updateDraftCursor, type CameraState } from "./scene"
 import ViewCube from "./ViewCube"
 import ListenBar from "./ListenBar"
 import styles from "./Viewport.module.css"
@@ -15,15 +17,20 @@ const snapToDimension = (value: number, dimension: number) => {
   const step = dimension < 2 ? 0.1 : dimension < 5 ? 0.25 : dimension < 10 ? 0.5 : 1
   return Math.round(value / step) * step
 }
-const insideRoom = (x: number, y: number, outline?: { x: number; y: number }[]) => {
-  if (!outline?.length) return true
-  let inside = false
-  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
-    const a = outline[i]
-    const b = outline[j]
-    if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inside = !inside
-  }
-  return inside
+const insideRoom = (x: number, y: number, outline?: { x: number; y: number }[]) =>
+  !outline?.length || pointInPolygon(x, y, outline)
+
+const DRAW_SNAP_STEP = 0.5
+const CLOSE_RADIUS_PX = 12
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+interface ViewState {
+  view: ViewMode
+  room: Room
+  tool: Tool
+  gridSnap: boolean
+  draft: Point[]
+  unit: Unit
 }
 
 interface Latest {
@@ -47,9 +54,11 @@ export default function Viewport() {
   const unit = useAppSelector((state) => state.dimension.currentUnit)
   const tool = useAppSelector((state) => state.tool.activeTool)
   const gridSnap = useAppSelector((state) => state.tool.gridSnap)
+  const draft = useAppSelector((state) => state.tool.draft)
   const unlocking = useAppSelector((state) => state.tool.unlocking)
   const showBeams = useAppSelector((state) => state.tool.showBeams)
   const [active, setActive] = useState<ItemRef | null>(null)
+  const [drawNote, setDrawNote] = useState("")
   const [orient, setOrient] = useState({ azimuth: DEFAULT_CAMERA.azimuth, elevation: DEFAULT_CAMERA.elevation })
   const cam = useRef<CameraState>({ ...DEFAULT_CAMERA })
   const current = active ? (active.kind === "micArray" ? micArrays : speakers).find((i) => i.id === active.id) : undefined
@@ -68,7 +77,7 @@ export default function Viewport() {
   }
 
   // Kept in a ref so the resize observer always redraws with the newest view and room.
-  const viewState = useRef({ view, room, tool, gridSnap })
+  const viewState = useRef<ViewState>({ view, room, tool, gridSnap, draft, unit })
 
   useEffect(() => {
     const host = hostRef.current
@@ -134,6 +143,59 @@ export default function Viewport() {
       const rect = canvas.getBoundingClientRect()
       ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(ndc, camera)
+    }
+
+    // Floor point under the cursor for the room-drawing tool; snaps to the first corner when close enough to close the loop.
+    const drawTarget = (e: PointerEvent): { point: Point; closing: boolean } | null => {
+      aim(e)
+      const hit = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3())
+      if (!hit) return null
+      const { draft: corners, gridSnap: snapping } = viewState.current
+      let x = snapping ? Math.round(hit.x / DRAW_SNAP_STEP) * DRAW_SNAP_STEP : hit.x
+      let y = snapping ? Math.round(hit.z / DRAW_SNAP_STEP) * DRAW_SNAP_STEP : hit.z
+      const last = corners[corners.length - 1]
+      // Shift locks the new wall to horizontal or vertical.
+      if (e.shiftKey && last) {
+        if (Math.abs(x - last.x) > Math.abs(y - last.y)) y = last.y
+        else x = last.x
+      }
+      const point = {
+        x: round2(clamp(x, 0, DRAW_AREA.width)),
+        y: round2(clamp(y, 0, DRAW_AREA.length)),
+      }
+      const metersPerPixel = (camera.top - camera.bottom) / canvas.clientHeight
+      const first = corners[0]
+      const closing = corners.length >= 3 && Math.hypot(point.x - first.x, point.y - first.y) <= CLOSE_RADIUS_PX * metersPerPixel
+      return { point: closing ? first : point, closing }
+    }
+
+    const drawMove = (e: PointerEvent) => {
+      const target = drawTarget(e)
+      if (!target || !state.scene) return
+      const { draft: corners, unit: displayUnit } = viewState.current
+      const last = corners[corners.length - 1] ?? null
+      const error = target.closing ? canClose(corners) : canAddPoint(corners, target.point)
+      updateDraftCursor(state.scene, last, target.point, !error)
+      state.render()
+      const factor = displayUnit === "ft" ? 3.28084 : 1
+      if (error) setDrawNote(error)
+      else if (target.closing) setDrawNote(`Close room · ${round2(Math.abs(signedArea(corners)) * factor * factor)} ${displayUnit}²`)
+      else if (last) setDrawNote(`Wall ${round2(Math.hypot(target.point.x - last.x, target.point.y - last.y) * factor)} ${displayUnit}`)
+      else setDrawNote("")
+    }
+
+    const drawClick = (e: PointerEvent) => {
+      const target = drawTarget(e)
+      if (!target) return
+      const corners = viewState.current.draft
+      const error = target.closing ? canClose(corners) : canAddPoint(corners, target.point)
+      if (error) return setDrawNote(error)
+      if (target.closing) {
+        dispatch(setRoomOutline(normalizeOutline(corners)))
+        dispatch(setTool("select"))
+        return
+      }
+      dispatch(addDraftPoint(target.point))
     }
 
     const pick = (): ItemRef | null => {
@@ -207,6 +269,11 @@ export default function Viewport() {
         state.render()
         return
       }
+      if (viewState.current.tool === "room") {
+        canvas.style.cursor = "crosshair"
+        drawMove(e)
+        return
+      }
       aim(e)
       if (!dragging) {
         canvas.style.cursor = viewState.current.tool !== "select" ? "crosshair" : pick() ? "grab" : "default"
@@ -252,6 +319,7 @@ export default function Viewport() {
       // A click (not a drag): a placing tool creates an item, the select tool clears the selection.
       if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) {
         if (viewState.current.tool === "select") dispatch(selectItem(null))
+        else if (viewState.current.tool === "room") drawClick(e)
         else {
           place(e)
           dispatch(setTool("select"))
@@ -301,15 +369,41 @@ export default function Viewport() {
   useEffect(() => {
     const state = latest.current
     selectedRef.current = selected
-    viewState.current = { view, room, tool, gridSnap }
+    // Drawing always uses a top-down view of a fixed workspace.
+    const drawing = tool === "room"
+    viewState.current = { view: drawing ? "2d" : view, room: drawing ? DRAW_ROOM : room, tool, gridSnap, draft, unit }
     state.heights = Object.fromEntries([
       ...speakers.map((s) => [itemName("speaker", s.id), s.position.z]),
       ...micArrays.map((m) => [itemName("micArray", m.id), m.position.z]),
     ])
     if (state.scene) disposeScene(state.scene)
-    state.scene = buildScene(room, speakers, micArrays, selected, view, unit, showBeams)
+    state.scene = drawing
+      ? buildDraftScene(draft, room, unit)
+      : buildScene(room, speakers, micArrays, selected, view, unit, showBeams)
     state.render()
-  }, [view, room, tool, gridSnap, speakers, micArrays, selected, unit, showBeams])
+  }, [view, room, tool, gridSnap, draft, speakers, micArrays, selected, unit, showBeams])
+
+  useEffect(() => {
+    if (tool !== "room") return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input, select, textarea")) return
+      if (e.key === "Escape") dispatch(setTool("select"))
+      else if (e.key === "Backspace") {
+        e.preventDefault()
+        dispatch(popDraftPoint())
+      } else if (e.key === "Enter") {
+        const error = canClose(draft)
+        if (error) return setDrawNote(error)
+        dispatch(setRoomOutline(normalizeOutline(draft)))
+        dispatch(setTool("select"))
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+      setDrawNote("")
+    }
+  }, [tool, draft, dispatch])
 
   useEffect(() => {
     if (!unlocking) return
@@ -337,7 +431,9 @@ export default function Viewport() {
   }
 
   const hint =
-    tool === "mic"
+    tool === "room"
+      ? "Click to add corners · click the first corner or press Enter to close · Shift locks angle · Backspace undoes · Esc cancels"
+      : tool === "mic"
       ? "Click to place a new mic array"
       : tool === "speaker"
         ? "Click to place a new speaker"
@@ -348,7 +444,7 @@ export default function Viewport() {
   return (
     <div className={styles.root}>
       <div ref={hostRef} className={styles.host} />
-      {view === "3d" && (
+      {view === "3d" && tool !== "room" && (
         <ViewCube
           azimuth={orient.azimuth}
           elevation={orient.elevation}
@@ -358,6 +454,9 @@ export default function Viewport() {
       )}
       <span className={styles.label}>{hint}</span>
       <ListenBar />
+      {tool === "room" && drawNote && (
+        <span className={`${styles.label} ${styles.readout}`}>{drawNote}</span>
+      )}
       {active && current && (
         <span className={`${styles.label} ${styles.readout}`}>
           {current.name} height{" "}
