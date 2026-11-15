@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { setUnit, setViewMode } from "@/store/slices/dimensionSlice"
-import { addItem, loadSimulation, setSimAudio, type ImportedScene, type SceneItem } from "@/store/slices/sceneSlice"
+import { addItem, loadSimulation, setBeamAudio, setSimAudio, type ImportedScene, type SceneItem } from "@/store/slices/sceneSlice"
 import { AUDIO_TRACKS, findTrack } from "@/data/audioTracks"
 import { SIMULATION_PRESETS } from "@/data/simulationPresets"
 import { trackToWavBase64, wavBase64ToUrl } from "@/lib/audio"
@@ -31,8 +31,6 @@ export default function Topbar() {
   const customScene = useRef<SavedCustomScene | null>(null)
   const customId = useRef("custom")
   const lastRoomCreationRevision = useRef(0)
-  const [posAudioOptions, setPosAudioOptions] = useState<string[]>([])
-  const [selectedPosAudioIndex, setSelectedPosAudioIndex] = useState(0)
 
   const importInput = useRef<HTMLInputElement | null>(null)
   const dispatch = useAppDispatch()
@@ -45,6 +43,7 @@ export default function Topbar() {
   const syncFocus = useAppSelector((state) => state.scene.syncFocus)
   const uploads = useAppSelector((state) => state.scene.uploads)
   const simAudio = useAppSelector((state) => state.scene.simAudio)
+  const beamAudio = useAppSelector((state) => state.scene.beamAudio)
   const roomCreationRevision = useAppSelector((state) => state.scene.roomCreationRevision)
   const customRooms = useMemo(() => savedCustomRooms.map((entry) =>
     entry.id === activePreset
@@ -72,6 +71,7 @@ export default function Topbar() {
   }, [activePreset, room, material, speakers, micArrays, syncFocus, view, unit, roomCreationRevision])
 
   useEffect(() => () => simAudio.forEach((url) => URL.revokeObjectURL(url)), [simAudio])
+  useEffect(() => () => Object.values(beamAudio).forEach((url) => URL.revokeObjectURL(url)), [beamAudio])
   useEffect(() => {
     const controller = new AbortController()
     fetch("/api/simulation", { signal: controller.signal, cache: "no-store" })
@@ -86,7 +86,7 @@ export default function Topbar() {
     setRunning(true)
     setRunMessage("")
     dispatch(setSimAudio([]))
-    setPosAudioOptions([])
+    dispatch(setBeamAudio({}))
     const startedAt = performance.now()
     try {
       const is2d = view === "2d"
@@ -98,12 +98,6 @@ export default function Topbar() {
         const track = speaker.trackId ? findTrack(speaker.trackId, [...AUDIO_TRACKS, ...uploads]) : null
         const sourceToUse = track?.src ?? defaultTrackSrc
         return sourceToUse ? await trackToWavBase64(sourceToUse) : null
-      }))
-
-      // 2. Map over mic arrays for focus tracks
-      const posAudio = await Promise.all(micArrays.map(async ({ focusId }) => {
-        const track = focusId ? findTrack(focusId, [...AUDIO_TRACKS, ...uploads]) : null
-        return track ? await trackToWavBase64(track.src) : null
       }))
 
       const response = await fetch("/api/simulation", {
@@ -126,7 +120,6 @@ export default function Topbar() {
             return index === -1 ? null : index
           }),
           talker_audio: talkerAudio, // Sends array of multiple speaker audio files
-          pos_audio: posAudio,
         }),
       })
 
@@ -135,14 +128,20 @@ export default function Topbar() {
       if (!response.ok) throw new Error(result.error ?? "Simulation request failed")
       setApiState("connected")
       
-      const posAudioList = Array.isArray(result.pos_audio)
-        ? result.pos_audio.map((item: { audio: string }) => item.audio)
+      const micAudio: string[] = Array.isArray(result.mic_audio)
+        ? result.mic_audio.map((item: { audio: string }) => item.audio)
         : []
+      if (micAudio.length > 0) dispatch(setSimAudio(micAudio.map(wavBase64ToUrl)))
 
-      if (posAudioList.length > 0) {
-        const audioUrls = posAudioList.map((base64: string) => wavBase64ToUrl(base64))
-        dispatch(setSimAudio(audioUrls))
+      // The backend beamforms toward every speaker; talker_index follows the request order.
+      const beamUrls: Record<string, string> = {}
+      if (Array.isArray(result.beamformed)) {
+        for (const item of result.beamformed as { talker_index: number; audio: string }[]) {
+          const speaker = speakers[item.talker_index]
+          if (speaker) beamUrls[speaker.id] = wavBase64ToUrl(item.audio)
+        }
       }
+      dispatch(setBeamAudio(beamUrls))
       /*
       const estimatedPositions = result.talkers
       if (Array.isArray(estimatedPositions) && estimatedPositions.length > 0) {
@@ -160,7 +159,7 @@ export default function Topbar() {
       */
 
       const rt60 = typeof result.rt60 === "number" ? ` · RT60 ${result.rt60.toFixed(2)} s` : ""
-      setRunMessage(posAudioList.length
+      setRunMessage(micAudio.length
         ? `Simulation complete${rt60} · audio ready`
         : `Simulation complete${rt60} · assign audio tracks to hear them`)
     } catch (error) {
@@ -168,14 +167,6 @@ export default function Topbar() {
       setRunMessage(error instanceof Error ? error.message : "Simulation request failed")
     } finally {
       setRunning(false)
-    }
-  }
-
-  const handlePosAudioChange = (indexString: string) => {
-    const index = parseInt(indexString, 10)
-    setSelectedPosAudioIndex(index)
-    if (posAudioOptions[index]) {
-      dispatch(setSimAudio([wavBase64ToUrl(posAudioOptions[index])]))
     }
   }
 
@@ -417,35 +408,6 @@ export default function Topbar() {
           <path d="m6 9 6 6 6-6" />
         </svg>
       </div>
-
-      {/* Dropdown for pos_audio selection */}
-      {posAudioOptions.length > 0 && (
-        <>
-          <div className={styles.divider} />
-          <div className={styles.selectWrap}>
-            <select
-              className={styles.select} // or your existing CSS/Tailwind classes
-              value={selectedPosAudioIndex}
-              onChange={(e) => setSelectedPosAudioIndex(Number(e.target.value))}
-            >
-              {simAudio.length > 0 ? (
-                simAudio.map((_, index) => (
-                  <option key={index} value={index}>
-                    Beamformed Track #{index + 1}
-                  </option>
-                ))
-              ) : (
-                <option value={0} disabled>
-                  No audio ready · Run simulation
-                </option>
-              )}
-            </select>
-            <svg {...icon} width={14} height={14} className={styles.chevron}>
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
-        </>
-      )}
 
       <div className={styles.divider} />
 

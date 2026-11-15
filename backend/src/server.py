@@ -2,10 +2,11 @@ import math
 import threading
 
 from Simulation.sim import get_material_absorption, get_materials, mic_focus_targets, shoebox_simulation, encode_wav
-from Algorithm.tdoa import estimate_tdoa, estimate_tdoa_with_onset_window, TDOAResult
-from Algorithm.beamformer import beamform
+from Algorithm.tdoa import estimate_tdoa, estimate_tdoa_with_onset_window
+from Algorithm.beamformer import beamform_talkers
 from Algorithm.solver import solve_position
 
+import numpy as np
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
@@ -18,6 +19,12 @@ MAX_AUDIO_CHARS = 4_000_000
 # Constants for simulation and sound localization
 SAMPLE_RATE = 16000
 SPEED_OF_SOUND = 343.0
+
+# Linear boost on the beamformed audio (about +14 dB); tanh soft-limits the peaks it would push past full scale.
+BEAM_GAIN = 5.0
+
+# The simulation truncates reflections, so its tail decays faster than the theoretical RT60 for reflective rooms.
+MAX_REVERB_TIME = 0.8
 
 def _validate_config(config):
     shoebox = config.get("shoebox")
@@ -106,8 +113,26 @@ def data():
             return jsonify({"error": str(err)}), 400
         
     audio_channels = result["audio"]
+    if audio_channels is None:
+        audio_channels = []
     estimated_positions = []
-    pos_audio_list = []
+    beamformed_list = []
+
+    # Beams come from the recorded mixture only; talkers without audio make no sound to isolate.
+    beams = {}
+    audible = [index for index, track in enumerate(talker_audio) if track is not None]
+    if result["linear_audio"] is not None:
+        try:
+            beams = dict(zip(audible, beamform_talkers(
+                result["linear_audio"],
+                mics,
+                [talkers[index] for index in audible],
+                SAMPLE_RATE,
+                SPEED_OF_SOUND,
+                reverb_time=min(result["rt60"] or MAX_REVERB_TIME, MAX_REVERB_TIME),
+            )))
+        except Exception as e:
+            print(f"Error beamforming: {e}")
 
     for talker_index, talker_pos in enumerate(talkers):
         try:
@@ -135,37 +160,16 @@ def data():
             else:
                 estimated_positions.append(talker_pos)
 
-            # 3. Beamform targeting the specific speaker's channel/index profile
-            beamform_result = beamform(
-                signals=audio_channels,
-                tdoa=tdoa_result,
-                sample_rate=SAMPLE_RATE,
-            )
-            
-            # Use distinct slice or channel weighting if available, 
-            # or map the isolated stream per talker index
-            target_signal = beamform_result.signal
-            if isinstance(target_signal, list) and len(target_signal) > talker_index:
-                channel_data = target_signal[talker_index]
-            elif hasattr(target_signal, "ndim") and target_signal.ndim > 1 and target_signal.shape[0] > talker_index:
-                channel_data = target_signal[talker_index]
-            else:
-                # Fallback: mix or offset channel index so they aren't identical binaries
-                chan_idx = talker_index % len(audio_channels)
-                channel_data = audio_channels[chan_idx]
-
-            pos_audio_list.append({
-                "talker_index": talker_index,
-                "audio": encode_wav(channel_data)
-            })
-
         except Exception as e:
-            print(f"Error processing talker {talker_index}: {e}")
+            print(f"Error localizing talker {talker_index}: {e}")
             estimated_positions.append(talker_pos)
-            fallback_chan = audio_channels[talker_index % len(audio_channels)]
-            pos_audio_list.append({
+
+        beam = beams.get(talker_index)
+        if beam is not None:
+            beamformed_list.append({
                 "talker_index": talker_index,
-                "audio": encode_wav(fallback_chan)
+                "position": talker_pos,
+                "audio": encode_wav(np.tanh(beam * BEAM_GAIN)),
             })
 
     audio = [encode_wav(channel) for channel in audio_channels]
@@ -185,9 +189,9 @@ def data():
             "audio": audio,
             "mic_audio": [
                 {"mic_index": index, "position": position, "audio": audio[index]}
-                for index, position in enumerate(mics)
-            ] if audio is not None else [],
-            "pos_audio": pos_audio_list,
+                for index, position in enumerate(mics[: len(audio)])
+            ],
+            "beamformed": beamformed_list,
         }
     )
 

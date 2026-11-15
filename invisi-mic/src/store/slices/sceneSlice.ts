@@ -28,6 +28,8 @@ interface SceneState {
   uploads: AudioTrack[];
   // Simulated audio blob URLs, one per mic array in run order.
   simAudio: string[];
+  // Beamformed audio blob URLs keyed by the speaker the beam points at.
+  beamAudio: Record<string, string>;
   speakers: SceneItem[];
   micArrays: SceneItem[];
   selected: ItemRef | null;
@@ -87,6 +89,7 @@ const initialState: SceneState = {
   material: "",
   uploads: [],
   simAudio: [],
+  beamAudio: {},
   speakers: [{ id: "speaker-1", name: "Speaker 01", position: { x: 7, y: 1.5, z: DEFAULT_HEIGHT.speaker } }],
   micArrays: [{ id: "mic-1", name: "Mic array 01", position: { x: 7, y: 8.5, z: DEFAULT_HEIGHT.micArray }, focusId: "speaker-1" }],
   selected: { kind: "speaker", id: "speaker-1" },
@@ -117,6 +120,7 @@ export const sceneSlice = createSlice({
       state.room = { width, length, height: state.room.height, outline };
       state.roomCreationRevision += 1;
       state.simAudio = [];
+      state.beamAudio = {};
       for (const item of [...state.speakers, ...state.micArrays]) {
         const { x, y } = moveInside(item.position, outline);
         item.position = { ...item.position, x, y };
@@ -131,6 +135,9 @@ export const sceneSlice = createSlice({
     setSimAudio: (state, action: PayloadAction<string[]>) => {
       state.simAudio = action.payload;
     },
+    setBeamAudio: (state, action: PayloadAction<Record<string, string>>) => {
+      state.beamAudio = action.payload;
+    },
     loadSimulation: (state, action: PayloadAction<ImportedScene>) => {
       const { room, material, speakers, micArrays, syncFocus } = action.payload;
       state.room = room;
@@ -140,6 +147,7 @@ export const sceneSlice = createSlice({
       state.syncFocus = syncFocus;
       state.selected = null;
       state.simAudio = [];
+      state.beamAudio = {};
       const nextCounter = (items: SceneItem[], prefix: string) => items.reduce((max, item) => {
         const match = item.id.match(new RegExp(`^${prefix}-(\\d+)$`));
         return match ? Math.max(max, Number(match[1])) : max;
@@ -200,5 +208,5 @@ export const sceneSlice = createSlice({
   }
 })
 
-export const { setRoom, setRoomOutline, setMaterial, setUploads, setSimAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
+export const { setRoom, setRoomOutline, setMaterial, setUploads, setSimAudio, setBeamAudio, loadSimulation, addItem, updateItem, setFocus, setTrack, setSyncFocus, selectItem, removeItem } = sceneSlice.actions;
 export default sceneSlice.reducer;
