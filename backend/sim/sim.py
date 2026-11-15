@@ -1,6 +1,7 @@
 import base64
 import io
 import math
+from typing import Any, TypedDict
 
 import numpy as np
 import pyroomacoustics as pra
@@ -13,37 +14,47 @@ INPUT_RMS = 0.1
 OUTPUT_RMS = 0.25
 MAX_ORDER = 8
 
-def get_materials():
+
+class SimulationResult(TypedDict):
+    rt60: float | None
+    audio: list[str] | None
+
+
+def get_materials() -> Any:
     return pra.parameters.materials_absorption_table.keys()
 
-def get_material_absorption():
+def get_material_absorption() -> dict[str, float]:
     table = pra.parameters.materials_absorption_table
     return {name: float(np.mean(entry["coeffs"])) for name, entry in table.items()}
 
-def add_mics(mic_positions: list[list[float]], room: pra.Room):
+def add_mics(mic_positions: list[list[float]], room: pra.Room) -> None:
     for mic in mic_positions:
         room.add_microphone(mic)
 
-def add_sources(talker_positions: list[list[float]], room: pra.Room, signals):
+def add_sources(talker_positions: list[list[float]], room: pra.Room, signals: list[np.ndarray | None]) -> None:
     # pyroomacoustics can't simulate sources without a signal, so silent talkers are skipped.
     for talker, signal in zip(talker_positions, signals):
         if signal is not None:
             room.add_source(talker, signal=signal)
 
-def decode_wav(encoded: str):
+def decode_wav(encoded: str) -> tuple[int, np.ndarray]:
     rate, data = wavfile.read(io.BytesIO(base64.b64decode(encoded, validate=True)))
     if data.ndim > 1:
         data = data.mean(axis=1)
     if np.issubdtype(data.dtype, np.integer):
-        data = data / np.iinfo(data.dtype).max
+        data = data.astype(np.float64) / float(np.iinfo(str(data.dtype)).max)
     return rate, data.astype(np.float64)
 
-def encode_wav(signal: np.ndarray):
+def encode_wav(signal: np.ndarray) -> str:
     buffer = io.BytesIO()
     wavfile.write(buffer, SAMPLE_RATE, (np.clip(signal, -1, 1) * 32767).astype(np.int16))
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
-def mic_focus_targets(mic_positions, talker_positions, mic_focus):
+def mic_focus_targets(
+    mic_positions: list[list[float]],
+    talker_positions: list[list[float]],
+    mic_focus: list[int | None],
+) -> list[dict[str, int | float]]:
     # A null focus entry means the mic aims at its nearest talker.
     mics = np.asarray(mic_positions, dtype=float)
     talkers = np.asarray(talker_positions, dtype=float)
@@ -54,7 +65,7 @@ def mic_focus_targets(mic_positions, talker_positions, mic_focus):
         targets.append({"mic": i, "talker": index, "distance": float(distances[index])})
     return targets
 
-def build_room(shoebox_dims, outline, material):
+def build_room(shoebox_dims: list[float], outline: list[list[float]] | None, material: str | None) -> pra.Room:
     if not outline:
         materials = pra.Material(material) if material else None
         return pra.ShoeBox(shoebox_dims, fs=SAMPLE_RATE, materials=materials, max_order=MAX_ORDER)
@@ -82,7 +93,7 @@ def build_room(shoebox_dims, outline, material):
         room.extrude(float(shoebox_dims[2]), materials=pra.Material(material) if material else None)
     return room
 
-def check_inside(room, positions, label):
+def check_inside(room: pra.Room, positions: list[list[float]], label: str) -> None:
     for index, position in enumerate(positions):
         if not room.is_inside(np.asarray(position, dtype=float)):
             raise ValueError(f"{label} {index} is outside the room outline")
@@ -91,16 +102,17 @@ def shoebox_simulation(
     shoebox_dims,
     mic_positions,
     talker_positions: list[list[float]],
-    material=None,
-    talker_audio=None,
-    outline=None,
-):
+    material: str | None = None,
+    talker_audio: list[str | None] | None = None,
+    outline: list[list[float]] | None = None,
+) -> SimulationResult:
     room = build_room(shoebox_dims, outline, material)
     if outline:
         check_inside(room, mic_positions, "mic")
         check_inside(room, talker_positions, "talker")
 
-    talker_audio = talker_audio or [None] * len(talker_positions)
+    if talker_audio is None:
+        talker_audio = [None for _ in talker_positions]
     signals = []
     for encoded in talker_audio:
         if encoded is None:
@@ -122,7 +134,13 @@ def shoebox_simulation(
     audio = None
     if any(signal is not None for signal in signals):
         room.simulate()
-        mixed = room.mic_array.signals[:, : SAMPLE_RATE * DURATION_SECONDS]
+        mic_array = room.mic_array
+        if mic_array is None:
+            raise ValueError("simulation did not produce microphone signals")
+        mic_signals = mic_array.signals
+        if mic_signals is None:
+            raise ValueError("simulation did not produce microphone signals")
+        mixed = mic_signals[:, : SAMPLE_RATE * DURATION_SECONDS]
         # One shared gain keeps the relative level between mics; tanh soft-limits the loudest peaks.
         channel_rms = np.sqrt(np.mean(mixed**2, axis=1))
         mixed = np.tanh(mixed * (OUTPUT_RMS / max(float(np.median(channel_rms)), 1e-9))) * 0.95
