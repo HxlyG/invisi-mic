@@ -72,7 +72,7 @@ export default function Toolbar() {
           </button>
         </div>
       ))}
-      <div className={styles.item}>
+      {/* <div className={styles.item}>
         <div className={styles.divider} />
         <button
           type="button"
@@ -86,7 +86,7 @@ export default function Toolbar() {
             <path d="M4 4h16v16H4zM4 10h16M4 16h16M10 4v16M16 4v16" />
           </svg>
         </button>
-      </div>
+      </div> */}
     </div>
   )
 }

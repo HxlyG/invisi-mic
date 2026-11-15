@@ -123,7 +123,15 @@ export default function Topbar() {
         }),
       })
 
-      const result = await response.json()
+      // A proxy or server error can return plain text, so report it instead of a JSON parse error.
+      const text = await response.text()
+      const result = (() => {
+        try {
+          return JSON.parse(text)
+        } catch {
+          throw new Error(`Simulation request failed (HTTP ${response.status}): ${text.slice(0, 120) || "empty response"}`)
+        }
+      })()
       setLatency(Math.round(performance.now() - startedAt))
       if (!response.ok) throw new Error(result.error ?? "Simulation request failed")
       setApiState("connected")
