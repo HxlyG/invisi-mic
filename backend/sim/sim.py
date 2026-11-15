@@ -20,6 +20,41 @@ def shoebox_simulation(shoebox_dims, mic_positions, talker_positions: list[list[
     add_mics(mic_positions, room)
 
     # plot the room and resulting beamformer
-    fig, _ = room.plot(freq=[1000, 2000, 4000, 8000], img_order=0)
-    plt.show()
-    plt.close(fig)
+    fig, ax = room.plot(
+        freq=[1000, 2000, 4000, 8000], img_order=0, mic_marker_size=30
+    )
+
+    xs = [mic[0] for mic in mic_positions]
+    ys = [mic[1] for mic in mic_positions]
+
+    if room.dim == 2:
+        ax.scatter(
+            xs,
+            ys,
+            s=80,
+            c="red",
+            marker="o",
+            edgecolors="white",
+            linewidths=0.8,
+            zorder=5,
+            label="microphones",
+        )
+    else:
+        zs = [mic[2] for mic in mic_positions]
+        ax.scatter(
+            xs,
+            ys,
+            zs,
+            s=80,
+            c="red",
+            marker="o",
+            edgecolors="white",
+            linewidths=0.8,
+            zorder=5,
+            label="microphones",
+        )
+
+    ax.legend(loc="upper right")
+    room.simulate()
+    # plt.show()
+    # plt.close(fig)
