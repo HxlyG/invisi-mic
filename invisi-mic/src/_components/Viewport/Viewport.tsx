@@ -9,6 +9,10 @@ import ViewCube from "./ViewCube"
 import styles from "./Viewport.module.css"
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+const snapToDimension = (value: number, dimension: number) => {
+  const step = dimension < 2 ? 0.1 : dimension < 5 ? 0.25 : dimension < 10 ? 0.5 : 1
+  return Math.round(value / step) * step
+}
 
 interface Latest {
   scene: THREE.Scene | null
@@ -27,8 +31,11 @@ export default function Viewport() {
   const speakers = useAppSelector((state) => state.scene.speakers)
   const micArrays = useAppSelector((state) => state.scene.micArrays)
   const selected = useAppSelector((state) => state.scene.selected)
+  const selectedRef = useRef(selected)
   const unit = useAppSelector((state) => state.dimension.currentUnit)
   const tool = useAppSelector((state) => state.tool.activeTool)
+  const gridSnap = useAppSelector((state) => state.tool.gridSnap)
+  const unlocking = useAppSelector((state) => state.tool.unlocking)
   const [active, setActive] = useState<ItemRef | null>(null)
   const [orient, setOrient] = useState({ azimuth: DEFAULT_CAMERA.azimuth, elevation: DEFAULT_CAMERA.elevation })
   const cam = useRef<CameraState>({ ...DEFAULT_CAMERA })
@@ -51,7 +58,7 @@ export default function Viewport() {
   }
 
   // Kept in a ref so the resize observer always redraws with the newest view and room.
-  const viewState = useRef({ view, room, tool })
+  const viewState = useRef({ view, room, tool, gridSnap })
 
   useEffect(() => {
     const host = hostRef.current
@@ -86,6 +93,7 @@ export default function Viewport() {
     const ndc = new THREE.Vector2()
     let dragging: ItemRef | null = null
     let liveHeight = 0
+    let unsnappedHeight = 0
     let lastY = 0
     let pxPerMeter = 1
     let navigating = false
@@ -100,7 +108,13 @@ export default function Viewport() {
       const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3())
       if (!point) return
       const { room: bounds } = viewState.current
-      dispatch(addItem({ kind, x: clamp(point.x, 0, bounds.width), y: clamp(point.z, 0, bounds.length) }))
+      const snap = (value: number, dimension: number) =>
+        viewState.current.gridSnap ? snapToDimension(value, dimension) : value
+      dispatch(addItem({
+        kind,
+        x: clamp(snap(point.x, bounds.width), 0, bounds.width),
+        y: clamp(snap(point.z, bounds.length), 0, bounds.length),
+      }))
     }
 
     const aim = (e: PointerEvent) => {
@@ -137,7 +151,8 @@ export default function Viewport() {
         return
       }
 
-      const alreadySelected = selected?.kind === dragging.kind && selected.id === dragging.id
+      const alreadySelected =
+        selectedRef.current?.kind === dragging.kind && selectedRef.current.id === dragging.id
       dispatch(selectItem(dragging))
       if (!alreadySelected) {
         dragging = null
@@ -150,6 +165,7 @@ export default function Viewport() {
       setActive(dragging)
       canvas.style.cursor = "grabbing"
       liveHeight = state.heights[itemName(dragging.kind, dragging.id)] ?? 0
+      unsnappedHeight = liveHeight
       lastY = e.clientY
 
       // Screen pixels per meter of height; top-down has no vertical axis, so fall back to the horizontal scale.
@@ -188,7 +204,15 @@ export default function Viewport() {
       lastY = e.clientY
       if (e.shiftKey) {
         canvas.style.cursor = "ns-resize"
-        liveHeight = clamp(liveHeight + dy / pxPerMeter, 0, viewState.current.room.height)
+        unsnappedHeight = clamp(
+          unsnappedHeight + dy / pxPerMeter,
+          0,
+          viewState.current.room.height,
+        )
+        const snappedHeight = viewState.current.gridSnap
+          ? snapToDimension(unsnappedHeight, viewState.current.room.height)
+          : unsnappedHeight
+        liveHeight = clamp(snappedHeight, 0, viewState.current.room.height)
         const z = { z: liveHeight }
         dispatch(updateItem({ ...dragging, patch: z }))
         return
@@ -199,7 +223,12 @@ export default function Viewport() {
       const point = raycaster.ray.intersectPlane(plane, new THREE.Vector3())
       if (!point) return
       const { room: bounds } = viewState.current
-      const position = { x: clamp(point.x, 0, bounds.width), y: clamp(point.z, 0, bounds.length) }
+      const snap = (value: number, dimension: number) =>
+        viewState.current.gridSnap ? snapToDimension(value, dimension) : value
+      const position = {
+        x: clamp(snap(point.x, bounds.width), 0, bounds.width),
+        y: clamp(snap(point.z, bounds.length), 0, bounds.length),
+      }
       dispatch(updateItem({ ...dragging, patch: position }))
     }
 
@@ -254,7 +283,8 @@ export default function Viewport() {
 
   useEffect(() => {
     const state = latest.current
-    viewState.current = { view, room, tool }
+    selectedRef.current = selected
+    viewState.current = { view, room, tool, gridSnap }
     state.heights = Object.fromEntries([
       ...speakers.map((s) => [itemName("speaker", s.id), s.position.z]),
       ...micArrays.map((m) => [itemName("micArray", m.id), m.position.z]),
@@ -262,7 +292,26 @@ export default function Viewport() {
     if (state.scene) disposeScene(state.scene)
     state.scene = buildScene(room, speakers, micArrays, selected, view)
     state.render()
-  }, [view, room, tool, speakers, micArrays, selected])
+  }, [view, room, tool, gridSnap, speakers, micArrays, selected])
+
+  useEffect(() => {
+    if (!unlocking) return
+    const startedAt = performance.now()
+    let frame = 0
+    const animateRing = (now: number) => {
+      const progress = clamp((now - startedAt) / 250, 0, 1)
+      const ring = latest.current.scene?.getObjectByName("selection-ring")
+      if (ring) {
+        ring.scale.setScalar(progress)
+        const material = (ring as THREE.Mesh).material as THREE.MeshBasicMaterial
+        material.opacity = 0.65 * progress
+      }
+      latest.current.render()
+      if (progress < 1) frame = requestAnimationFrame(animateRing)
+    }
+    frame = requestAnimationFrame(animateRing)
+    return () => cancelAnimationFrame(frame)
+  }, [unlocking])
 
   const setCamera = (patch: Partial<CameraState>) => {
     cam.current = { ...cam.current, ...patch }

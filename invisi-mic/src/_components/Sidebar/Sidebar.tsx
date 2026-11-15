@@ -1,10 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import styles from "./Sidebar.module.css"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { removeItem, setRoom, updateItem } from "@/store/slices/sceneSlice"
+import { setUnlocking } from "@/store/slices/toolSlice"
 
 const icon = {
   width: 15,
@@ -110,6 +111,11 @@ export default function Sidebar() {
   const [absorption, setAbsorption] = useState("drywall")
   const [voice, setVoice] = useState("65")
   const [locked, setLocked] = useState(true)
+  const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (lockTimer.current) clearTimeout(lockTimer.current)
+  }, [])
 
   const dispatch = useAppDispatch()
   const room = useAppSelector((state) => state.scene.room)
@@ -280,7 +286,17 @@ export default function Sidebar() {
                     aria-checked={locked}
                     aria-label="Lock beam to active talker"
                     className={`${styles.switch} ${locked ? styles.switchOn : ""}`}
-                    onClick={() => setLocked(!locked)}
+                    onClick={() => {
+                      if (lockTimer.current) clearTimeout(lockTimer.current)
+                      dispatch(setUnlocking(locked))
+                      setLocked((current) => !current)
+                      if (locked) {
+                        lockTimer.current = setTimeout(() => {
+                        dispatch(setUnlocking(false))
+                        lockTimer.current = null
+                        }, 250)
+                      }
+                    }}
                   />
                 </div>
               </>

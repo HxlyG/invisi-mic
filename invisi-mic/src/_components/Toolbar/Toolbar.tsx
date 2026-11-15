@@ -1,7 +1,7 @@
 "use client"
 
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
-import { setTool, type Tool } from "@/store/slices/toolSlice"
+import { setGridSnap, setTool, type Tool } from "@/store/slices/toolSlice"
 import styles from "./Toolbar.module.css"
 
 const icon = {
@@ -48,6 +48,7 @@ const TOOLS: { id: Tool; label: string; icon: React.ReactNode }[] = [
 export default function Toolbar() {
   const dispatch = useAppDispatch()
   const activeTool = useAppSelector((state) => state.tool.activeTool)
+  const gridSnap = useAppSelector((state) => state.tool.gridSnap)
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-orientation="vertical" aria-label="Diagram tools">
@@ -66,6 +67,21 @@ export default function Toolbar() {
           </button>
         </div>
       ))}
+      <div className={styles.item}>
+        <div className={styles.divider} />
+        <button
+          type="button"
+          title={gridSnap ? "Grid snap on" : "Grid snap off"}
+          aria-label="Snap icons to grid"
+          aria-pressed={gridSnap}
+          className={`${styles.button} ${gridSnap ? styles.active : ""}`}
+          onClick={() => dispatch(setGridSnap(!gridSnap))}
+        >
+          <svg {...icon}>
+            <path d="M4 4h16v16H4zM4 10h16M4 16h16M10 4v16M16 4v16" />
+          </svg>
+        </button>
+      </div>
     </div>
   )
 }
