@@ -66,6 +66,7 @@ def solve_position(
             are invalid or cannot determine a position in the requested
             dimensions.
     """
+    print(microphone_positions)
     microphones = np.asarray(microphone_positions, dtype=np.float64)
     if microphones.ndim != 2 or microphones.shape[1] not in (2, 3):
         raise ValueError("microphone_positions must have shape (n_mics, 2 or 3)")

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useAppDispatch, useAppSelector } from "@/store/hooks"
 import { setUnit, setViewMode } from "@/store/slices/dimensionSlice"
-import { loadSimulation, setSimAudio, type ImportedScene, type SceneItem } from "@/store/slices/sceneSlice"
+import { addItem, loadSimulation, setSimAudio, type ImportedScene, type SceneItem } from "@/store/slices/sceneSlice"
 import { AUDIO_TRACKS, findTrack } from "@/data/audioTracks"
 import { SIMULATION_PRESETS } from "@/data/simulationPresets"
 import { trackToWavBase64, wavBase64ToUrl } from "@/lib/audio"
@@ -31,6 +31,9 @@ export default function Topbar() {
   const customScene = useRef<SavedCustomScene | null>(null)
   const customId = useRef("custom")
   const lastRoomCreationRevision = useRef(0)
+  const [posAudioOptions, setPosAudioOptions] = useState<string[]>([])
+  const [selectedPosAudioIndex, setSelectedPosAudioIndex] = useState(0)
+
   const importInput = useRef<HTMLInputElement | null>(null)
   const dispatch = useAppDispatch()
   const view = useAppSelector((state) => state.dimension.viewMode)
@@ -83,13 +86,26 @@ export default function Topbar() {
     setRunning(true)
     setRunMessage("")
     dispatch(setSimAudio([]))
+    setPosAudioOptions([])
     const startedAt = performance.now()
     try {
       const is2d = view === "2d"
-      const talkerAudio = await Promise.all(speakers.map(async ({ trackId }) => {
-        const track = findTrack(trackId, [...AUDIO_TRACKS, ...uploads])
-        return track ? trackToWavBase64(track.src) : null
+
+      // Map over ALL speakers, fallback to the first default track if none is assigned
+      const defaultTrackSrc = AUDIO_TRACKS[0]?.src ?? null
+
+      const talkerAudio = await Promise.all(speakers.map(async (speaker) => {
+        const track = speaker.trackId ? findTrack(speaker.trackId, [...AUDIO_TRACKS, ...uploads]) : null
+        const sourceToUse = track?.src ?? defaultTrackSrc
+        return sourceToUse ? await trackToWavBase64(sourceToUse) : null
       }))
+
+      // 2. Map over mic arrays for focus tracks
+      const posAudio = await Promise.all(micArrays.map(async ({ focusId }) => {
+        const track = focusId ? findTrack(focusId, [...AUDIO_TRACKS, ...uploads]) : null
+        return track ? await trackToWavBase64(track.src) : null
+      }))
+
       const response = await fetch("/api/simulation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,26 +125,57 @@ export default function Topbar() {
             const index = speakers.findIndex((speaker) => speaker.id === focusId)
             return index === -1 ? null : index
           }),
-          talker_audio: talkerAudio,
+          talker_audio: talkerAudio, // Sends array of multiple speaker audio files
+          pos_audio: posAudio,
         }),
       })
+
       const result = await response.json()
       setLatency(Math.round(performance.now() - startedAt))
       if (!response.ok) throw new Error(result.error ?? "Simulation request failed")
       setApiState("connected")
-      const micAudio = Array.isArray(result.mic_audio)
-        ? result.mic_audio.map((output: { audio: string }) => output.audio)
-        : result.audio
-      if (Array.isArray(micAudio)) dispatch(setSimAudio(micAudio.map(wavBase64ToUrl)))
+      
+      const posAudioList = Array.isArray(result.pos_audio)
+        ? result.pos_audio.map((item: { audio: string }) => item.audio)
+        : []
+
+      if (posAudioList.length > 0) {
+        const audioUrls = posAudioList.map((base64: string) => wavBase64ToUrl(base64))
+        dispatch(setSimAudio(audioUrls))
+      }
+      /*
+      const estimatedPositions = result.talkers
+      if (Array.isArray(estimatedPositions) && estimatedPositions.length > 0) {
+        estimatedPositions.forEach((pos: number[]) => {
+          const [x, y] = pos
+          dispatch(
+            addItem({
+              kind: "speaker",
+              x: x,
+              y: y,
+            })
+          )
+        })
+      }
+      */
+
       const rt60 = typeof result.rt60 === "number" ? ` · RT60 ${result.rt60.toFixed(2)} s` : ""
-      setRunMessage(micAudio?.length
+      setRunMessage(posAudioList.length
         ? `Simulation complete${rt60} · audio ready`
-        : `Simulation complete${rt60} · assign an audio track to hear it`)
+        : `Simulation complete${rt60} · assign audio tracks to hear them`)
     } catch (error) {
       setApiState("disconnected")
       setRunMessage(error instanceof Error ? error.message : "Simulation request failed")
     } finally {
       setRunning(false)
+    }
+  }
+
+  const handlePosAudioChange = (indexString: string) => {
+    const index = parseInt(indexString, 10)
+    setSelectedPosAudioIndex(index)
+    if (posAudioOptions[index]) {
+      dispatch(setSimAudio([wavBase64ToUrl(posAudioOptions[index])]))
     }
   }
 
@@ -371,8 +418,36 @@ export default function Topbar() {
         </svg>
       </div>
 
-      <div className={styles.divider} />
+      {/* Dropdown for pos_audio selection */}
+      {posAudioOptions.length > 0 && (
+        <>
+          <div className={styles.divider} />
+          <div className={styles.selectWrap}>
+            <select
+              className={styles.select} // or your existing CSS/Tailwind classes
+              value={selectedPosAudioIndex}
+              onChange={(e) => setSelectedPosAudioIndex(Number(e.target.value))}
+            >
+              {simAudio.length > 0 ? (
+                simAudio.map((_, index) => (
+                  <option key={index} value={index}>
+                    Beamformed Track #{index + 1}
+                  </option>
+                ))
+              ) : (
+                <option value={0} disabled>
+                  No audio ready · Run simulation
+                </option>
+              )}
+            </select>
+            <svg {...icon} width={14} height={14} className={styles.chevron}>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </div>
+        </>
+      )}
 
+      <div className={styles.divider} />
 
       <div className={styles.units}>
         <button
